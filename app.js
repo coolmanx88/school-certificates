@@ -76,3 +76,14 @@ function renderAccounts(){
 }
 $('accountSearch').oninput=renderAccounts;
 $('refreshAccounts').onclick=async()=>{try{await loadAccounts();}catch(e){notice(e.message);}};
+
+$('addAccountForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{
+  const input=Object.fromEntries(new FormData(e.target));
+  if(!/^[0-9]{10}$/.test(input.identity)||!input.name.trim()||input.password.length<6||input.password.length>256)throw Error('أدخل اسمًا وهوية من عشرة أرقام وكلمة مرور من 6 أحرف على الأقل.');
+  const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
+  const verifier=await derive(input.password,salt);
+  await json('/users',{name:input.name.trim(),identity:input.identity,role:input.role,salt,verifier,passwordLength:input.password.length});
+  input.password='';e.target.reset();$('accountSearch').value='';
+  notice('تم إنشاء الحساب وتفعيله. يُطلب تغيير كلمة المرور المؤقتة عند أول دخول.');
+  try{await loadAccounts();}catch{notice('تم إنشاء الحساب، لكن تعذر تحديث القائمة. اضغط تحديث القائمة.');}
+});};
