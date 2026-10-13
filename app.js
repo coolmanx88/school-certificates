@@ -32,5 +32,14 @@ function filtered(){const q=$('search').value.trim().toLowerCase(),s=$('status')
 function cell(tr,text,sub){const td=document.createElement('td');td.textContent=text;if(sub){const small=document.createElement('small');small.textContent=sub;td.append(small);}tr.append(td);return td;}
 function render(){const list=filtered();$('count').textContent=list.length;$('hours').textContent=list.reduce((a,r)=>a+r.hours,0);$('pending').textContent=list.filter(r=>r.status==='pending').length;$('rows').replaceChildren();$('empty').hidden=!!list.length;for(const r of list){const tr=document.createElement('tr');cell(tr,r.name);cell(tr,r.title,r.provider);cell(tr,r.date);cell(tr,r.hours);cell(tr,r.category,r.year);const td=cell(tr,'');const select=document.createElement('select');select.setAttribute('aria-label','حالة '+r.title);for(const [key,label]of Object.entries(labels)){const o=new Option(label,key);select.add(o);}select.value=r.status;select.onchange=async()=>{select.disabled=true;try{await json('/certificates/'+r.id,{status:select.value},'PATCH');r.status=select.value;render();}catch(e){select.value=r.status;notice(e.message);}finally{select.disabled=false;}};td.append(select);const btn=document.createElement('button');btn.textContent='فتح PDF';btn.onclick=async()=>{btn.disabled=true;try{const response=await api('/certificates/'+r.id+'/file');const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){notice(e.message);}finally{btn.disabled=false;}};cell(tr,'').append(btn);$('rows').append(tr);}}
 $('search').oninput=render;$('status').onchange=render;
-$('export').onclick=()=>{const quote=x=>'"'+String(/^[=+@\-\t\r]/.test(String(x))?'\''+x:x).replaceAll('"','""')+'"';const rows=[['المعلم','الدورة','الجهة','التاريخ','الساعات','المجال','السنة','الحالة'],...filtered().map(r=>[r.name,r.title,r.provider,r.date,r.hours,r.category,r.year,labels[r.status]])];const url=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.map(quote).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='school-certificates.csv';a.click();URL.revokeObjectURL(url);};
-
+$('export').onclick=async()=>{
+  const button=$('export'),list=filtered().map(r=>({...r})),filters={query:$('search').value.trim(),status:$('status').value};
+  if(!list.length){notice('لا توجد نتائج لتصديرها.');return;}
+  button.disabled=true;
+  try{
+    const ExcelJS=await SchoolExcel.loadLibrary(),workbook=SchoolExcel.createWorkbook(ExcelJS,list,filters),bytes=await workbook.xlsx.writeBuffer();
+    const url=URL.createObjectURL(new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    const link=document.createElement('a');link.href=url;link.download='نتائج-بحث-الشهادات-'+new Date().toISOString().slice(0,10)+'.xlsx';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    notice('تم تصدير '+list.length+' سجلًا إلى Excel.');
+  }catch(e){notice(e.message);}finally{button.disabled=false;}
+};
