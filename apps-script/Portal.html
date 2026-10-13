@@ -10,6 +10,7 @@ async function api(path,options={}){
     body={};for(const [key,value]of options.body){if(value instanceof File){body.fileBase64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('تعذر قراءة الملف.'));r.readAsDataURL(value);});}else body[key]=value;}
   }
   const result=await new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(()=>reject(Error('تعذر الاتصال. حاول لاحقًا.'))).rpc({path,method:options.method||'GET',token,body}));
+  if(!result||typeof result.status!=='number')throw Error('تعذر قراءة استجابة الخدمة. حدّث الصفحة، وتأكد من نشر آخر إصدار للتطبيق.');
   if(result.status!==200){if(result.status===401)logout();throw Error(result.data?.error||'تعذر إتمام العملية.');}
   return {json:async()=>result.data,blob:async()=>{const bytes=Uint8Array.from(atob(result.fileBase64),c=>c.charCodeAt(0));return new Blob([bytes],{type:result.mime});}};
 }
