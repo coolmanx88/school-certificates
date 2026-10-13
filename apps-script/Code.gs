@@ -10,7 +10,8 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('بوابة الشهادات')
     .addItem('تهيئة المنظومة', 'initialize_')
     .addItem('تفعيل الحسابات المكتملة', 'activateAccountsFromEditor_')
-    .addItem('إعادة تعيين كلمات المرور المحددة', 'resetAccountsFromEditor_').addToUi();
+    .addItem('إعادة تعيين كلمات المرور المحددة', 'resetAccountsFromEditor_')
+    .addItem('تنظيم الشهادات السابقة', 'organizeExistingCertificates_').addToUi();
 }
 function initialize_() {
   const p = PropertiesService.getScriptProperties();
@@ -31,7 +32,7 @@ function initialize_() {
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('Portal');
   t.page = e && e.parameter && e.parameter.page === 'admin' ? 'admin' : 'teacher';
-  return t.evaluate().setTitle('مدرسة الرويشدي — سجل التدريب')
+  return t.evaluate().setTitle('مدرسة معاذ بن جبل — سجل التدريب')
     .addMetaTag('viewport','width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -49,6 +50,42 @@ function rows_(name) { const s=sheet_(name);return s.getLastRow()>1?s.getRange(2
 function userBy_(field,value) { const rows=rows_('Users'),index={id:0,identity:2}[field];const n=rows.findIndex(r=>r[index]===value);return n<0?null:{row:n+2,values:rows[n]}; }
 function text_(value,max) { if(typeof value!=='string'||!value.trim()||value.length>max)throw Error('بيانات غير صالحة.');return value.trim(); }
 function safe_(value) { return typeof value==='string' && /^\s*[=+@-]/.test(value)?"'"+value:value; }
+function certificateName_(title) {
+  const clean = String(title).replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().replace(/\.pdf$/i,'').trim().slice(0,180);
+  return (clean || 'شهادة') + '.pdf';
+}
+function organizeExistingCertificates_() {
+  const lock=LockService.getScriptLock();lock.waitLock(10000);
+  let changed=0,remaining=0,failed=0;
+  try{
+    rows_('Certificates').forEach(r=>{
+      try{
+        const u=userBy_('id',r[1]);if(!u){failed++;return;}
+        const target=teacherFolder_(u),file=DriveApp.getFileById(r[9]),parents=file.getParents();
+        let inside=false;while(parents.hasNext())if(parents.next().getId()===target.getId())inside=true;
+        const name=certificateName_(r[3]);if(inside&&file.getName()===name)return;
+        if(changed>=30){remaining++;return;}
+        file.moveTo(target);file.setName(name);changed++;
+      }catch(e){failed++;}
+    });
+    audit_('editor','organize-certificates',String(changed));
+  }finally{lock.releaseLock();}
+  SpreadsheetApp.getUi().alert('تم تنظيم '+changed+' شهادة. المتبقي: '+remaining+'. تعذر تنظيم: '+failed+'.'+(remaining?' شغّل الخيار مجددًا لإكمال الباقي.':''));
+}
+function teacherFolder_(u) {
+  const uid=u.values[0],name=String(u.values[1]).trim(),root=DriveApp.getFolderById(SCHOOL.folder);
+  const tag='school-teacher:'+uid,props=PropertiesService.getScriptProperties(),prop='folder:'+uid;
+  const duplicate=rows_('Users').filter(r=>r[5]==='teacher'&&String(r[1]).trim()===name).length>1;
+  const folderName=duplicate?name+' ('+uid.slice(0,8)+')':name;
+  const known=props.getProperty(prop);
+  if(known){try{const f=DriveApp.getFolderById(known),parents=f.getParents();let inside=false;while(parents.hasNext())if(parents.next().getId()===SCHOOL.folder)inside=true;
+    if(inside&&!f.isTrashed()&&f.getDescription()===tag){if(f.getName()!==folderName)f.setName(folderName);return f;}}catch(e){}}
+  const all=root.getFolders();while(all.hasNext()){const f=all.next();if(f.getDescription()===tag){f.setName(folderName);props.setProperty(prop,f.getId());return f;}}
+  const matches=root.getFoldersByName(folderName);let folder=null;
+  while(matches.hasNext()){const f=matches.next();if(!f.getDescription()||f.getDescription()===tag){if(folder)throw Error('يوجد أكثر من مجلد للمعلم بالاسم نفسه. تواصل مع المسؤول.');folder=f;}}
+  if(!folder)folder=root.createFolder(folderName);
+  folder.setDescription(tag);props.setProperty(prop,folder.getId());return folder;
+}
 function audit_(uid,action,id) { try{sheet_('Audit').appendRow([new Date().toISOString(),uid,action,id||'']);}catch(e){console.error('Audit write failed');} }
 function session_(token) {
   if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(token))throw Error('SESSION');
@@ -104,7 +141,7 @@ function rpc_(request) {
       if(bytes.length>SCHOOL.maxBytes||bytes.length<5||String.fromCharCode.apply(null,bytes.slice(0,5))!=='%PDF-')throw Error('أرفق ملف PDF صالحًا لا يتجاوز 25 ميجابايت.');
       const digest=hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,bytes));
       if(rows_('Certificates').some(r=>r[1]===uid&&r[10]===digest))throw Error('سبق رفع هذه الشهادة.');
-      const id=random_(),file=DriveApp.getFolderById(SCHOOL.folder).createFile(Utilities.newBlob(bytes,'application/pdf',id+'.pdf'));
+      const id=random_(),file=teacherFolder_(u).createFile(Utilities.newBlob(bytes,'application/pdf',certificateName_(title)));
       try{sheet_('Certificates').appendRow([id,uid,safe_(u.values[1]),safe_(title),safe_(provider),date,hours,safe_(category),safe_(year),file.getId(),digest,'pending',new Date().toISOString()]);}
       catch(e){file.setTrashed(true);throw e;}
       audit_(uid,'upload',id);return ok_({ok:true});
