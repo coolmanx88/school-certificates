@@ -150,6 +150,15 @@ function rpc_(request) {
       audit_(uid,'upload',id);return ok_({ok:true});
     }
     requireAdmin_(u);
+    if(path==='/users'&&method==='POST'){
+      const name=text_(body.name,120),identity=text_(body.identity,10);
+      if(!/^\d{10}$/.test(identity)||!['teacher','admin'].includes(body.role)||!/^[a-f0-9]{32}$/.test(body.salt||'')||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!Number.isInteger(body.passwordLength)||body.passwordLength<6||body.passwordLength>256)throw Error('تحقق من الاسم والهوية والصلاحية وكلمة المرور (6 أحرف على الأقل).');
+      const identityKey=key_(identity);
+      if(userBy_('identity',identityKey))throw Error('رقم الهوية مسجل بالفعل. استخدم الحساب الموجود أو أعد تفعيله إذا كان معطّلًا.');
+      const id=random_(),users=sheet_('Users');users.getRange(1,9).setValue('active');
+      users.appendRow([id,safe_(name),identityKey,body.salt,key_(body.verifier),body.role,true,1,true]);
+      audit_(uid,'account-create',id);return ok_({ok:true,id});
+    }
     if(path==='/users'&&method==='GET'){const header=sheet_('Users').getRange(1,9);if(header.getValues()[0][0]!=='active')header.setValue('active');return ok_(rows_('Users').map(r=>({id:r[0],name:r[1],role:r[5],active:active_({values:r}),self:r[0]===uid})));}
     const userMatch=path.match(/^\/users\/([a-f0-9]{64})$/);
     if(userMatch&&method==='PATCH'){
