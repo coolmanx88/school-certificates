@@ -3,3 +3,5 @@
 details{margin:20px 0;border:1px solid #dce5df;border-radius:10px;padding:16px}summary{cursor:pointer;font-weight:bold;color:#126b53}details[open] summary{margin-bottom:20px}
 
 .account-actions{display:flex;gap:8px;flex-wrap:wrap}dialog{border:1px solid #dce5df;border-radius:16px;padding:26px;color:#15362f;width:min(540px,92vw);font:inherit}dialog::backdrop{background:#15362f80}#resetAccountError{color:#a02d2d}dialog form>.toolbar>button{margin:0}
+
+.upload-feedback{padding:14px 16px;margin-top:16px;border-radius:10px;font-weight:bold;line-height:1.8}.upload-feedback[data-state="success"]{background:#e3f2e8;color:#14532d;border:1px solid #9dceb0}.upload-feedback[data-state="error"]{background:#fff0ef;color:#9d2525;border:1px solid #e9b6b2}.upload-feedback[data-state="loading"]{background:#edf3f0;color:#315649}
