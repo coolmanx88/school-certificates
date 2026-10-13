@@ -60,6 +60,20 @@ assert.equal(rpc({path:'/me',token:t.token}).status,401);
 const resumed=rpc({path:'/login',method:'POST',body:{identity:'2000000000',verifier:derive('Zy98@q',saltNow)}});assert.equal(resumed.status,200);t.token=resumed.data.token;
 // Older accounts with a blank active field remain enabled.
 const stored=context.userBy_('id',teacherId);tabs.get('Users').getRange(stored.row,9).setValue('');assert.equal(rpc({path:'/me',token:t.token}).status,200);
+const newSalt=crypto.randomBytes(16).toString('hex'),newAccount={name:'New teacher',identity:'4000000000',role:'teacher',salt:newSalt,verifier:derive('Ab12@x',newSalt),passwordLength:6};
+assert.equal(rpc({path:'/users',method:'POST',token:t.token,body:newAccount}).status,403);
+assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:{...newAccount,passwordLength:5}}).status,400);
+assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:{...newAccount,identity:'123'}}).status,400);
+assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:{...newAccount,role:'superadmin'}}).status,400);
+const created=rpc({path:'/users',method:'POST',token:a.token,body:newAccount});assert.equal(created.status,200);
+assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:newAccount}).status,400);
+assert.equal(rpc({path:'/users',token:a.token}).data.length,3);
+const createdUser=login('4000000000');assert.equal(createdUser.user.mustChange,true);assert.equal(createdUser.user.role,'teacher');
+assert.equal(rpc({path:'/certificates',token:createdUser.token}).status,400);
+assert.equal(rpc({path:'/users/'+created.data.id,method:'PATCH',token:a.token,body:{active:false}}).status,200);
+assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:newAccount}).status,400);
+assert.equal(rpc({path:'/me',token:createdUser.token}).status,401);
+assert.equal(rpc({path:'/certificates',token:a.token}).data.length,1);assert.equal(files.size,1);
 assert.equal(rpc({path:'/logout',method:'POST',token:t.token}).status,200);assert.equal(rpc({path:'/certificates',token:t.token}).status,401);assert.equal(rpc({path:'/me',token:t.token}).status,401);
 // Login attempts cannot bypass the rate limit by calling /login directly.
 for(let i=0;i<11;i++)rpc({path:'/login',method:'POST',body:{identity:'3000000000',verifier:'0'.repeat(64)}});
