@@ -18,13 +18,14 @@ function initialize_() {
   if (!p.getProperty('SECRET')) p.setProperty('SECRET', random_());
   const ss = SpreadsheetApp.openById(SCHOOL.spreadsheet);
   const headers = {
-    Users: ['id','name','identityKey','salt','passwordDigest','role','mustChange','version'],
+    Users: ['id','name','identityKey','salt','passwordDigest','role','mustChange','version','active'],
     Certificates: ['id','userId','name','title','provider','date','hours','category','year','driveId','digest','status','created'],
     Audit: ['time','userId','action','recordId']
   };
   Object.keys(headers).forEach(name => {
     let s = ss.getSheetByName(name);
     if (!s) { s = ss.insertSheet(name); s.appendRow(headers[name]); s.setFrozenRows(1); }
+    if(name==='Users')s.getRange(1,9).setValue('active');
     s.setRightToLeft(true);
   });
   SpreadsheetApp.getUi().alert('تمت التهيئة. املأ الأسماء والهويات ثم اختر تفعيل الحسابات المكتملة.');
@@ -91,8 +92,9 @@ function session_(token) {
   if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(token))throw Error('SESSION');
   const value=CacheService.getScriptCache().get('session:'+hash_(token));if(!value)throw Error('SESSION');
   const session=JSON.parse(value),u=userBy_('id',session.uid);
-  if(!u||u.values[7]!==session.version)throw Error('SESSION');return u;
+  if(!u||!active_(u)||u.values[7]!==session.version)throw Error('SESSION');return u;
 }
+function active_(u){return u.values[8]!==false&&String(u.values[8]).toLowerCase()!=='false';}
 function loginRate_(identity,increment) {
   const p=PropertiesService.getScriptProperties(),k='attempt:'+(userBy_('identity',key_(identity))?key_(identity):'unknown'),now=Date.now();
   let data=JSON.parse(p.getProperty(k)||'null');if(!data||data.until<now)data={count:0,until:now+15*60000};
@@ -116,19 +118,19 @@ function rpc_(request) {
     if(path==='/login'&&method==='POST') {
       const identity=text_(body.identity,30);loginRate_(identity,true);
       const u=userBy_('identity',key_(identity));
-      if(!u||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!equal_(u.values[4],key_(body.verifier)))throw Error('رقم الهوية أو كلمة المرور غير صحيحة.');
+      if(!u||!active_(u)||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!equal_(u.values[4],key_(body.verifier)))throw Error('رقم الهوية أو كلمة المرور غير صحيحة أو الحساب معطّل.');
       const token=random_();CacheService.getScriptCache().put('session:'+hash_(token),JSON.stringify({uid:u.values[0],version:u.values[7]}),7200);
       PropertiesService.getScriptProperties().deleteProperty('attempt:'+key_(identity));
-      return ok_({token,user:{name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
+      return ok_({token,user:{id:u.values[0],name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
     }
     if(path.startsWith('/setup/'))return setupRequest_(request);
     const u=session_(request.token),uid=u.values[0];
-    if(path==='/me'&&method==='GET')return ok_({user:{name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
+    if(path==='/me'&&method==='GET')return ok_({user:{id:u.values[0],name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
     if(path==='/logout'&&method==='POST'){CacheService.getScriptCache().remove('session:'+hash_(request.token));return ok_({ok:true});}
     if(path==='/password'&&method==='POST') {
       if(!equal_(u.values[4],key_(body.current||''))||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!/^[a-f0-9]{32}$/.test(body.salt||'')||body.verifier===body.current)throw Error('تعذر تغيير كلمة المرور.');
       u.values[3]=body.salt;u.values[4]=key_(body.verifier);u.values[6]=false;u.values[7]++;
-      sheet_('Users').getRange(u.row,1,1,8).setValues([u.values]);
+      sheet_('Users').getRange(u.row,1,1,8).setValues([u.values.slice(0,8)]);
       CacheService.getScriptCache().put('session:'+hash_(request.token),JSON.stringify({uid,version:u.values[7]}),7200);
       audit_(uid,'password-change');return ok_({ok:true});
     }
@@ -148,6 +150,19 @@ function rpc_(request) {
       audit_(uid,'upload',id);return ok_({ok:true});
     }
     requireAdmin_(u);
+    if(path==='/users'&&method==='GET'){const header=sheet_('Users').getRange(1,9);if(header.getValues()[0][0]!=='active')header.setValue('active');return ok_(rows_('Users').map(r=>({id:r[0],name:r[1],role:r[5],active:active_({values:r}),self:r[0]===uid})));}
+    const userMatch=path.match(/^\/users\/([a-f0-9]{64})$/);
+    if(userMatch&&method==='PATCH'){
+      if(typeof body.active!=='boolean')throw Error('حالة الحساب غير صالحة.');
+      const target=userBy_('id',userMatch[1]);if(!target)throw Error('الحساب غير موجود.');
+      if(!body.active&&target.values[5]==='admin'&&active_(target)&&rows_('Users').filter(r=>r[5]==='admin'&&active_({values:r})).length<=1)throw Error('لا يمكن تعطيل آخر مسؤول فعّال.');
+      if(!body.active&&target.values[0]===uid)throw Error('لا يمكنك تعطيل الحساب الذي تستخدمه الآن.');
+      if(active_(target)!==body.active){
+        sheet_('Users').getRange(target.row,8,1,2).setValues([[Number(target.values[7])+1,body.active]]);
+        audit_(uid,body.active?'account-enable':'account-disable',target.values[0]);
+      }
+      return ok_({ok:true});
+    }
     if(path==='/certificates'&&method==='GET')return ok_(rows_('Certificates').reverse().map(r=>({id:r[0],name:r[2],title:r[3],provider:r[4],date:dateText_(r[5]),hours:Number(r[6]),category:r[7],year:r[8],status:r[11]})));
     const match=path.match(/^\/certificates\/([a-f0-9]{64})(\/file)?$/);
     if(match){const records=rows_('Certificates'),i=records.findIndex(r=>r[0]===match[1]);if(i<0)throw Error('السجل غير موجود.');
@@ -194,9 +209,9 @@ function setupRequest_(request){
       if(e.row!==p.row||e.salt!==p.salt||hash_(JSON.stringify(r))!==p.snapshot||!/^[a-f0-9]{64}$/.test(e.verifier||''))throw Error('تغيرت البيانات أثناء التفعيل. افتح النافذة مجددًا.');
       const existing=userBy_('identity',key_(r[2].trim()));
       if((!mode.reset&&existing)||(mode.reset&&!existing))throw Error('تغيرت حالة الحساب.');
-      return {row:p.row,existing,values:[existing?existing.values[0]:random_(),safe_(r[1].trim()),key_(r[2].trim()),p.salt,key_(e.verifier),{'معلم':'teacher','مسؤول':'admin'}[r[4].trim()],true,existing?existing.values[7]+1:1]};
+      return {row:p.row,existing,values:[existing?existing.values[0]:random_(),safe_(r[1].trim()),key_(r[2].trim()),p.salt,key_(e.verifier),{'معلم':'teacher','مسؤول':'admin'}[r[4].trim()],true,existing?existing.values[7]+1:1,existing?active_(existing):true]};
     });
-    candidates.forEach(c=>{const s=sheet_('Users');if(c.existing)s.getRange(c.existing.row,1,1,8).setValues([c.values]);else s.appendRow(c.values);input.getRange(c.row,4).clearContent();});
+    candidates.forEach(c=>{const s=sheet_('Users');if(c.existing)s.getRange(c.existing.row,1,1,9).setValues([c.values]);else s.appendRow(c.values);input.getRange(c.row,4).clearContent();});
     CacheService.getScriptCache().remove('setup:'+hash_(token));CacheService.getScriptCache().remove('pending:'+hash_(token));
     audit_('editor',mode.reset?'account-reset':'account-import',String(candidates.length));return ok_({count:candidates.length});
   }
