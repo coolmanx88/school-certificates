@@ -123,6 +123,7 @@ function rpc_(request) {
     }
     if(path.startsWith('/setup/'))return setupRequest_(request);
     const u=session_(request.token),uid=u.values[0];
+    if(path==='/me'&&method==='GET')return ok_({user:{name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
     if(path==='/logout'&&method==='POST'){CacheService.getScriptCache().remove('session:'+hash_(request.token));return ok_({ok:true});}
     if(path==='/password'&&method==='POST') {
       if(!equal_(u.values[4],key_(body.current||''))||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!/^[a-f0-9]{32}$/.test(body.salt||'')||body.verifier===body.current)throw Error('تعذر تغيير كلمة المرور.');
