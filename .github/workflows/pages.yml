@@ -30,6 +30,8 @@ jobs:
           node --check /tmp/school-code.js
       - name: Test Apps Script permissions
         run: node scripts/test-apps-script.mjs
+      - name: Test session restoration
+        run: node scripts/test-session.mjs
       - name: Test Excel export
         run: |
           npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund exceljs@4.4.0
