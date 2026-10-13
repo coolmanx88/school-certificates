@@ -24,7 +24,7 @@ const SESSION_KEY='muadh-school-session-v1';
 function rememberSession(){try{sessionStorage.setItem(SESSION_KEY,token);}catch{}}
 function savedSession(){try{return sessionStorage.getItem(SESSION_KEY)||'';}catch{return '';}}
 function forgetSession(){try{sessionStorage.removeItem(SESSION_KEY);}catch{}}
-function logout(){forgetSession();token='';user=null;records=[];accountRecords=[];$('accountRows').replaceChildren();$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
+function logout(){if($('resetAccountDialog').open)$('resetAccountDialog').close();$('resetAccountForm').reset();forgetSession();token='';user=null;records=[];accountRecords=[];$('accountRows').replaceChildren();$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
 async function busy(form,fn){const b=form.querySelector('button');b.disabled=true;try{await fn();}catch(e){notice(e.message);}finally{b.disabled=false;}}
 function show(){ $('login').hidden=true;$('workspace').hidden=false;$('welcome').textContent='مرحبًا، '+user.name;$('passwordBox').hidden=!user.mustChange;$('teacher').hidden=user.mustChange||user.role!=='teacher';$('admin').hidden=user.mustChange||user.role!=='admin';}
 $('loginForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));const challenge=await json('/challenge',{identity:input.identity});const verifier=await derive(input.password,challenge.salt,challenge.rounds);const result=await json('/login',{identity:input.identity,verifier});token=result.token;user=result.user;if(document.body.dataset.page==='admin'&&user.role!=='admin'){await api('/logout',{method:'POST'});logout();throw Error('هذه الصفحة مخصصة للمسؤول فقط.');}rememberSession();e.target.reset();show();notice('تم تسجيل الدخول.');if(user.role==='admin'&&!user.mustChange)await load();});};
@@ -71,7 +71,7 @@ function renderAccounts(){
       if(account.active&&!confirm('تعطيل حساب '+account.name+'؟ سيتوقف دخوله، وستبقى شهاداته محفوظة.'))return;
       button.disabled=true;
       try{await json('/users/'+account.id,{active:!account.active},'PATCH');await loadAccounts();notice(account.active?'تم تعطيل الحساب.':'تمت إعادة تفعيل الحساب.');}catch(e){notice(e.message);button.disabled=false;}
-    };cell(row,'').append(button);$('accountRows').append(row);
+    };const reset=document.createElement('button');reset.textContent='إعادة تعيين كلمة المرور';reset.className='secondary';reset.onclick=()=>openPasswordReset(account);const actions=document.createElement('div');actions.className='account-actions';actions.append(button,reset);cell(row,'').append(actions);$('accountRows').append(row);
   }
 }
 $('accountSearch').oninput=renderAccounts;
@@ -87,3 +87,21 @@ $('addAccountForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{
   notice('تم إنشاء الحساب وتفعيله. يُطلب تغيير كلمة المرور المؤقتة عند أول دخول.');
   try{await loadAccounts();}catch{notice('تم إنشاء الحساب، لكن تعذر تحديث القائمة. اضغط تحديث القائمة.');}
 });};
+
+let resetTarget=null;
+function openPasswordReset(account){resetTarget=account;$('resetAccountForm').reset();$('resetAccountError').textContent='';$('resetAccountName').textContent=account.name+(account.self?' — سيُسجّل خروجك بعد الحفظ.':account.active?'':' — الحساب معطّل، ولن تعيد هذه العملية تفعيله.');$('resetAccountDialog').showModal();}
+$('cancelResetAccount').onclick=()=>{$('resetAccountDialog').close();$('resetAccountForm').reset();resetTarget=null;};
+$('resetAccountDialog').onclose=()=>{$('resetAccountForm').reset();resetTarget=null;};
+$('resetAccountForm').onsubmit=async e=>{
+  e.preventDefault();const target=resetTarget;if(!target)return;
+  const form=e.target,submit=form.querySelector('button[type="submit"]'),cancel=$('cancelResetAccount');submit.disabled=true;cancel.disabled=true;$('resetAccountError').textContent='';
+  try{
+    const input=Object.fromEntries(new FormData(form));if(input.password.length<6||input.password.length>256)throw Error('أدخل كلمة مرور مؤقتة من 6 أحرف على الأقل.');
+    const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),verifier=await derive(input.password,salt);
+    const result=await json('/users/'+target.id+'/password',{salt,verifier,passwordLength:input.password.length});input.password='';form.reset();$('resetAccountDialog').close();
+    if(result.self){logout();notice('تم تعيين كلمة مرور مؤقتة لحسابك. سجل الدخول بها لتغييرها.');}
+    else{notice('تم تعيين كلمة المرور المؤقتة وإلغاء الجلسات السابقة.'+(result.active?'':' الحساب ما زال معطّلًا.'));}
+  }catch(e){if($('resetAccountDialog').open)$('resetAccountError').textContent=e.message;else notice(e.message);}finally{submit.disabled=false;cancel.disabled=false;}
+};
+
+$('resetAccountDialog').oncancel=e=>{if($('cancelResetAccount').disabled)e.preventDefault();};
