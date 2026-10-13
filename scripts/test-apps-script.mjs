@@ -78,4 +78,17 @@ assert.equal(rpc({path:'/logout',method:'POST',token:t.token}).status,200);asser
 // Login attempts cannot bypass the rate limit by calling /login directly.
 for(let i=0;i<11;i++)rpc({path:'/login',method:'POST',body:{identity:'3000000000',verifier:'0'.repeat(64)}});
 assert.match(rpc({path:'/login',method:'POST',body:{identity:'3000000000',verifier:'0'.repeat(64)}}).data.error,/محاولات/);
+const currentTeacher=context.userBy_('id',teacherId),beforeIdentity=currentTeacher.values[2];
+const freshTeacher=rpc({path:'/login',method:'POST',body:{identity:'2000000000',verifier:derive('Zy98@q',currentTeacher.values[3])}});assert.equal(freshTeacher.status,200);
+const resetSalt=crypto.randomBytes(16).toString('hex'),resetPayload={salt:resetSalt,verifier:derive('Temp6!',resetSalt),passwordLength:6};
+assert.equal(rpc({path:'/users/'+teacherId+'/password',method:'POST',token:freshTeacher.data.token,body:resetPayload}).status,403);
+assert.equal(rpc({path:'/users/'+teacherId+'/password',method:'POST',token:a.token,body:{...resetPayload,passwordLength:5}}).status,400);
+assert.equal(rpc({path:'/users/'+teacherId+'/password',method:'POST',token:a.token,body:resetPayload}).status,200);
+assert.equal(rpc({path:'/me',token:freshTeacher.data.token}).status,401);
+assert.equal(context.userBy_('id',teacherId).values[2],beforeIdentity);assert.equal(files.size,1);assert.equal(rpc({path:'/certificates',token:a.token}).data.length,1);
+assert.equal(rpc({path:'/login',method:'POST',body:{identity:'2000000000',verifier:derive('Zy98@q',resetSalt)}}).status,400);
+const afterReset=rpc({path:'/login',method:'POST',body:{identity:'2000000000',verifier:resetPayload.verifier}});assert.equal(afterReset.status,200);assert.equal(afterReset.data.user.mustChange,true);
+assert.equal(rpc({path:'/certificates',method:'POST',token:afterReset.data.token,body}).status,400);
+assert.equal(rpc({path:'/users/'+created.data.id+'/password',method:'POST',token:a.token,body:resetPayload}).status,200);assert.equal(context.active_(context.userBy_('id',created.data.id)),false);
+const selfReset=rpc({path:'/users/'+adminId+'/password',method:'POST',token:a.token,body:resetPayload});assert.equal(selfReset.status,200);assert.equal(selfReset.data.self,true);assert.equal(rpc({path:'/me',token:a.token}).status,401);
 console.log('PASS: account activation, PBKDF2 login, one-time setup, password change, role restrictions, mock PDF upload, duplicate prevention, admin download/review, logout and login throttling.');
