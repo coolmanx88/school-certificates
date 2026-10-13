@@ -1,2 +1,2 @@
-// Public configuration only. Never add passwords or Google credentials here.
-window.SCHOOL_CONFIG = { apiUrl: '' };
+// Public deployment URL only. Never put identities, passwords or secrets here.
+window.SCHOOL_CONFIG = { appsScriptUrl: '' };

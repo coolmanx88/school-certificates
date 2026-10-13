@@ -24,16 +24,16 @@ jobs:
       - name: Check JavaScript
         run: |
           node --check app.js
-          node --check backend/server.mjs
-      - name: Test API permissions
-        working-directory: backend
-        run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          node verify.mjs
+          node --check launch.js
+          node scripts/build-apps-script.mjs
+          cp apps-script/Code.gs /tmp/school-code.js
+          node --check /tmp/school-code.js
+      - name: Test Apps Script permissions
+        run: node scripts/test-apps-script.mjs
       - name: Prepare public files
         run: |
           mkdir public
-          cp index.html admin.html style.css app.js config.js public/
+          cp index.html admin.html launch.js config.js public/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
