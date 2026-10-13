@@ -13,7 +13,7 @@ const context=vm.createContext({console,Date,JSON,Math,Number,String,Array,Error
  CacheService:{getScriptCache:()=>({get:k=>cache.get(k)||null,put:(k,v)=>cache.set(k,v),remove:k=>cache.delete(k)})},
  LockService:{getScriptLock:()=>({waitLock(){},hasLock:()=>true,releaseLock(){}})},
  SpreadsheetApp:{openById:()=>spreadsheet,getUi:()=>({alert(){},showModalDialog(){}})},
- Utilities:{getUuid:()=>crypto.randomUUID(),DigestAlgorithm:{SHA_256:'sha256'},computeDigest:(_,x)=>signed(crypto.createHash('sha256').update(buffer(x)).digest()),computeHmacSha256Signature:(x,k)=>signed(crypto.createHmac('sha256',k).update(x).digest()),base64Decode:x=>signed(Buffer.from(x,'base64')),base64Encode:x=>buffer(x).toString('base64'),newBlob:(bytes,mime,name)=>({getBytes:()=>bytes})},
+ Utilities:{getUuid:()=>crypto.randomUUID(),formatDate:(v,tz)=>new Intl.DateTimeFormat('en-CA',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).format(v),DigestAlgorithm:{SHA_256:'sha256'},computeDigest:(_,x)=>signed(crypto.createHash('sha256').update(buffer(x)).digest()),computeHmacSha256Signature:(x,k)=>signed(crypto.createHmac('sha256',k).update(x).digest()),base64Decode:x=>signed(Buffer.from(x,'base64')),base64Encode:x=>buffer(x).toString('base64'),newBlob:(bytes,mime,name)=>({getBytes:()=>bytes})},
  DriveApp:{getFolderById:()=>({createFile(blob){const id=crypto.randomUUID();const f={getId:()=>id,getBlob:()=>blob,setTrashed:()=>files.delete(id)};files.set(id,f);return f;}}),getFileById:id=>files.get(id)}
 });
 vm.runInContext(await fs.readFile(new URL('../apps-script/Code.gs',import.meta.url),'utf8'),context);
@@ -35,7 +35,8 @@ assert.equal(rpc({path:'/certificates',token:t.token}).status,403);
 const body={title:'Course',provider:'School',date:'2026-10-13',hours:3,category:'Training',year:'1448',fileBase64:Buffer.from('%PDF-1.4 mock').toString('base64')};
 assert.equal(rpc({path:'/certificates',method:'POST',token:t.token,body}).status,200);
 assert.equal(rpc({path:'/certificates',method:'POST',token:t.token,body}).status,400);assert.equal(files.size,1);
-const list=rpc({path:'/certificates',token:a.token});assert.equal(list.data.length,1);const id=list.data[0].id;
+tabs.get('Certificates').getRange(2,6).setValue(new Date('2026-10-12T21:00:00Z'));
+const list=rpc({path:'/certificates',token:a.token});assert.equal(list.data[0].date,'2026-10-13');assert.equal(typeof list.data[0].date,'string');assert.equal(list.data.length,1);const id=list.data[0].id;
 assert.equal(rpc({path:'/certificates/'+id+'/file',token:t.token}).status,403);
 assert.equal(rpc({path:'/certificates/'+id+'/file',token:a.token}).status,200);
 assert.equal(rpc({path:'/certificates/'+id,method:'PATCH',token:a.token,body:{status:'approved'}}).status,200);
