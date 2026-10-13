@@ -65,10 +65,14 @@ async function derive(password,salt,rounds=600000){
 }
 
 async function json(path,data,method='POST'){return (await api(path,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})).json();}
-function logout(){token='';user=null;records=[];$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
+const SESSION_KEY='muadh-school-session-v1';
+function rememberSession(){try{sessionStorage.setItem(SESSION_KEY,token);}catch{}}
+function savedSession(){try{return sessionStorage.getItem(SESSION_KEY)||'';}catch{return '';}}
+function forgetSession(){try{sessionStorage.removeItem(SESSION_KEY);}catch{}}
+function logout(){forgetSession();token='';user=null;records=[];$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
 async function busy(form,fn){const b=form.querySelector('button');b.disabled=true;try{await fn();}catch(e){notice(e.message);}finally{b.disabled=false;}}
 function show(){ $('login').hidden=true;$('workspace').hidden=false;$('welcome').textContent='مرحبًا، '+user.name;$('passwordBox').hidden=!user.mustChange;$('teacher').hidden=user.mustChange||user.role!=='teacher';$('admin').hidden=user.mustChange||user.role!=='admin';}
-$('loginForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));const challenge=await json('/challenge',{identity:input.identity});const verifier=await derive(input.password,challenge.salt,challenge.rounds);const result=await json('/login',{identity:input.identity,verifier});token=result.token;user=result.user;if(document.body.dataset.page==='admin'&&user.role!=='admin'){await api('/logout',{method:'POST'});logout();throw Error('هذه الصفحة مخصصة للمسؤول فقط.');}e.target.reset();show();notice('تم تسجيل الدخول.');if(user.role==='admin'&&!user.mustChange)await load();});};
+$('loginForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));const challenge=await json('/challenge',{identity:input.identity});const verifier=await derive(input.password,challenge.salt,challenge.rounds);const result=await json('/login',{identity:input.identity,verifier});token=result.token;user=result.user;if(document.body.dataset.page==='admin'&&user.role!=='admin'){await api('/logout',{method:'POST'});logout();throw Error('هذه الصفحة مخصصة للمسؤول فقط.');}rememberSession();e.target.reset();show();notice('تم تسجيل الدخول.');if(user.role==='admin'&&!user.mustChange)await load();});};
 $('logout').onclick=async()=>{try{await api('/logout',{method:'POST'});}catch{}logout();notice('تم تسجيل الخروج.');};
 $('passwordForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));if(input.current===input.password)throw Error('اختر كلمة مرور جديدة مختلفة.');const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');await json('/password',{current:await derive(input.current,user.salt),verifier:await derive(input.password,salt),salt});user.salt=salt;user.mustChange=false;e.target.reset();show();notice('تم تغيير كلمة المرور.');if(user.role==='admin')await load();});};
 $('uploadForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const data=new FormData(e.target),file=data.get('file');if(file.size>25*1024*1024)throw Error('حجم الملف يتجاوز 25 ميجابايت.');await (await api('/certificates',{method:'POST',body:data})).json();e.target.reset();notice('تم حفظ الشهادة بنجاح وإرسالها للمراجعة.');});};
@@ -88,6 +92,18 @@ $('export').onclick=async()=>{
     notice('تم تصدير '+list.length+' سجلًا إلى Excel.');
   }catch(e){notice(e.message);}finally{button.disabled=false;}
 };
+
+async function restoreSession(){
+  const saved=savedSession();if(!saved)return;
+  if(!/^[a-f0-9]{64}$/.test(saved)){forgetSession();return;}
+  token=saved;$('login').hidden=true;notice('جارٍ استعادة الجلسة…');
+  try{
+    user=(await (await api('/me')).json()).user;
+    if(document.body.dataset.page==='admin'&&user.role!=='admin'){await api('/logout',{method:'POST'});logout();throw Error('هذه الصفحة مخصصة للمسؤول فقط.');}
+    show();notice('تمت استعادة الجلسة.');if(user.role==='admin'&&!user.mustChange)await load();
+  }catch(e){if(!user)$('login').hidden=false;notice(e.message);}
+}
+restoreSession();
 </script><script>
 const nonce=crypto.randomUUID();
 window.addEventListener('message',e=>{if(e.origin==='https://coolmanx88.github.io'&&e.source===window.top&&e.data?.type==='school-embed-ok'&&e.data.nonce===nonce)document.body.style.visibility='visible';});
