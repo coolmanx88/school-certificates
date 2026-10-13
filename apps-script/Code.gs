@@ -136,7 +136,7 @@ function setupRequest_(request){
     source.forEach((r,i)=>{const name=r[1].trim(),identity=r[2].trim(),password=r[3],role={'معلم':'teacher','مسؤول':'admin'}[r[4].trim()];
       if(!name&&!identity)return;const exists=userBy_('identity',key_(identity));
       if(exists&&!mode.reset)return;if(mode.reset&&!password)return;
-      if(!name||!/^\d{10}$/.test(identity)||password.length<12||password.length>256||!role)throw Error('راجع بيانات الصف '+(i+6));
+      if(!name||!/^\d{10}$/.test(identity)||password.length<6||password.length>256||!role)throw Error('راجع بيانات الصف '+(i+6));
       if(seen[identity])throw Error('هوية مكررة في الملف.');seen[identity]=true;
       if(mode.reset&&(!exists||exists.values[5]!==role))throw Error('إعادة التعيين تخص الحسابات الموجودة بنفس الصلاحية.');
       entries.push({row:i+6,name,identity,password,role,salt:random_().slice(0,32),snapshot:hash_(JSON.stringify(r))});
