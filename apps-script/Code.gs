@@ -63,7 +63,9 @@ function loginRate_(identity,increment) {
   if(increment){data.count++;p.setProperty(k,JSON.stringify(data));}
 }
 function requireAdmin_(u) { if(u.values[5]!=='admin')throw Error('FORBIDDEN'); }
-function rpc(request) {
+function rpc(request) { return JSON.parse(JSON.stringify(rpc_(request))); }
+function dateText_(value) { return value instanceof Date ? Utilities.formatDate(value, 'Asia/Riyadh', 'yyyy-MM-dd') : String(value || ''); }
+function rpc_(request) {
   const lock=LockService.getScriptLock();
   try {
     if(!request||typeof request.path!=='string')throw Error('طلب غير صالح.');
@@ -108,7 +110,7 @@ function rpc(request) {
       audit_(uid,'upload',id);return ok_({ok:true});
     }
     requireAdmin_(u);
-    if(path==='/certificates'&&method==='GET')return ok_(rows_('Certificates').reverse().map(r=>({id:r[0],name:r[2],title:r[3],provider:r[4],date:r[5],hours:r[6],category:r[7],year:r[8],status:r[11]})));
+    if(path==='/certificates'&&method==='GET')return ok_(rows_('Certificates').reverse().map(r=>({id:r[0],name:r[2],title:r[3],provider:r[4],date:dateText_(r[5]),hours:Number(r[6]),category:r[7],year:r[8],status:r[11]})));
     const match=path.match(/^\/certificates\/([a-f0-9]{64})(\/file)?$/);
     if(match){const records=rows_('Certificates'),i=records.findIndex(r=>r[0]===match[1]);if(i<0)throw Error('السجل غير موجود.');
       if(match[2]&&method==='GET'){const file=DriveApp.getFileById(records[i][9]);return {status:200,fileBase64:Utilities.base64Encode(file.getBlob().getBytes()),mime:'application/pdf'};}
