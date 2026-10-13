@@ -160,6 +160,14 @@ function rpc_(request) {
       audit_(uid,'account-create',id);return ok_({ok:true,id});
     }
     if(path==='/users'&&method==='GET'){const header=sheet_('Users').getRange(1,9);if(header.getValues()[0][0]!=='active')header.setValue('active');return ok_(rows_('Users').map(r=>({id:r[0],name:r[1],role:r[5],active:active_({values:r}),self:r[0]===uid})));}
+    const resetMatch=path.match(/^\/users\/([a-f0-9]{64})\/password$/);
+    if(resetMatch&&method==='POST'){
+      if(!/^[a-f0-9]{32}$/.test(body.salt||'')||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!Number.isInteger(body.passwordLength)||body.passwordLength<6||body.passwordLength>256)throw Error('كلمة المرور المؤقتة يجب أن تتكون من 6 أحرف على الأقل.');
+      const target=userBy_('id',resetMatch[1]);if(!target)throw Error('الحساب غير موجود.');
+      sheet_('Users').getRange(target.row,4,1,5).setValues([[body.salt,key_(body.verifier),target.values[5],true,Number(target.values[7])+1]]);
+      audit_(uid,'account-password-reset',target.values[0]);
+      return ok_({ok:true,self:target.values[0]===uid,active:active_(target)});
+    }
     const userMatch=path.match(/^\/users\/([a-f0-9]{64})$/);
     if(userMatch&&method==='PATCH'){
       if(typeof body.active!=='boolean')throw Error('حالة الحساب غير صالحة.');
