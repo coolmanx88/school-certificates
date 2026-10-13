@@ -1,0 +1,1 @@
+{"name":"school-certificates-api","private":true,"type":"module","engines":{"node":">=24"},"scripts":{"start":"node server.mjs","account":"node account.mjs"},"dependencies":{"express":"^5.1.0","express-rate-limit":"^8.1.0","helmet":"^8.1.0","multer":"^2.0.2"}}
