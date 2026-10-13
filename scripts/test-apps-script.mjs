@@ -32,9 +32,11 @@ const entries=pending.data.entries.map(e=>({row:e.row,salt:e.salt,verifier:deriv
 assert.equal(rpc({path:'/setup/commit',setupToken:setup,body:{entries}}).data.count,2);
 assert.equal(source[5][3],'');assert.equal(source[6][3],'');assert.equal(rpc({path:'/setup/pending',setupToken:setup}).status,400);
 function login(identity){const challenge=rpc({path:'/challenge',method:'POST',body:{identity}});assert.equal(challenge.status,200);const r=rpc({path:'/login',method:'POST',body:{identity,verifier:derive('Ab12@x',challenge.data.salt)}});assert.equal(r.status,200);return r.data;}
-const t=login('2000000000'),a=login('1000000000');
+const t=login('2000000000'),a=login('1000000000'),oldTeacher=login('2000000000');
+assert.equal(rpc({path:'/me',token:t.token}).data.user.mustChange,true);
 assert.equal(rpc({path:'/certificates',token:t.token}).status,400);
 for(const account of [t,a]){const salt=crypto.randomBytes(16).toString('hex');assert.equal(rpc({path:'/password',method:'POST',token:account.token,body:{current:derive('Ab12@x',account.user.salt),verifier:derive('Zy98@q',salt),salt}}).status,200);}
+assert.equal(rpc({path:'/me',token:t.token}).data.user.role,'teacher');assert.equal(rpc({path:'/me',token:t.token}).data.user.mustChange,false);assert.equal(rpc({path:'/me',token:oldTeacher.token}).status,401);
 assert.equal(rpc({path:'/certificates',token:t.token}).status,403);
 const body={title:'Course',provider:'School',date:'2026-10-13',hours:3,category:'Training',year:'1448',fileBase64:Buffer.from('%PDF-1.4 mock').toString('base64')};
 assert.equal(rpc({path:'/certificates',method:'POST',token:t.token,body}).status,200);
@@ -44,7 +46,7 @@ const list=rpc({path:'/certificates',token:a.token});assert.equal(list.data[0].d
 assert.equal(rpc({path:'/certificates/'+id+'/file',token:t.token}).status,403);
 assert.equal(rpc({path:'/certificates/'+id+'/file',token:a.token}).status,200);
 assert.equal(rpc({path:'/certificates/'+id,method:'PATCH',token:a.token,body:{status:'approved'}}).status,200);
-assert.equal(rpc({path:'/logout',method:'POST',token:t.token}).status,200);assert.equal(rpc({path:'/certificates',token:t.token}).status,401);
+assert.equal(rpc({path:'/logout',method:'POST',token:t.token}).status,200);assert.equal(rpc({path:'/certificates',token:t.token}).status,401);assert.equal(rpc({path:'/me',token:t.token}).status,401);
 // Login attempts cannot bypass the rate limit by calling /login directly.
 for(let i=0;i<11;i++)rpc({path:'/login',method:'POST',body:{identity:'3000000000',verifier:'0'.repeat(64)}});
 assert.match(rpc({path:'/login',method:'POST',body:{identity:'3000000000',verifier:'0'.repeat(64)}}).data.error,/محاولات/);
