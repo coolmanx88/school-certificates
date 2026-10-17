@@ -43,6 +43,8 @@ assert.equal(rpc({path:'/certificates',method:'POST',token:t.token,body}).status
 assert.equal(rpc({path:'/certificates',method:'POST',token:t.token,body}).status,400);assert.equal(files.size,1);assert.equal([...files.values()][0].getName(),'Course.pdf');assert.equal([...files.values()][0].getParents().next().getName(),'Teacher');
 tabs.get('Certificates').getRange(2,6).setValue(new Date('2026-10-12T21:00:00Z'));
 const list=rpc({path:'/certificates',token:a.token});assert.equal(list.data[0].date,'2026-10-13');assert.equal(typeof list.data[0].date,'string');assert.equal(list.data.length,1);const originalFile=[...files.values()][0];originalFile.moveTo(folders.get('1Gt9CVz3ZPDkEeekgi0tb0NdxSTRqLx9Z'));originalFile.setName('old-uuid.pdf');context.organizeExistingCertificates_();assert.equal(originalFile.getName(),'Course.pdf');assert.equal(originalFile.getParents().next().getName(),'Teacher');context.organizeExistingCertificates_();assert.equal(files.size,1);assert.equal(context.certificateName_('A/B\\C.pdf'),'A B C.pdf');const id=list.data[0].id;
+tabs.get('Certificates').getRange(2,12).setValue('correction');assert.equal(rpc({path:'/certificates',token:a.token}).data[0].status,'pending');assert.equal(rpc({path:'/certificates/'+id,method:'PATCH',token:a.token,body:{status:'correction'}}).status,400);assert.equal(rpc({path:'/certificates/'+id,method:'PATCH',token:a.token,body:{status:'pending'}}).status,200);
+
 assert.equal(rpc({path:'/certificates/'+id+'/file',token:t.token}).status,403);
 assert.equal(rpc({path:'/certificates/'+id+'/file',token:a.token}).status,200);
 assert.equal(rpc({path:'/certificates/'+id,method:'PATCH',token:a.token,body:{status:'approved'}}).status,200);

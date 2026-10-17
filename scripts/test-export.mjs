@@ -8,7 +8,7 @@ const ExcelJS=require(packagePath);
 const elements=new Map();
 const element=id=>{if(!elements.has(id))elements.set(id,{value:'',textContent:'',disabled:false});return elements.get(id);};
 element('search').value='التدريس';element('status').value='pending';
-const c=vm.createContext({console,Date,Number,String,RegExp,Error,globalThis:null,document:{getElementById:element,createElement:()=>({}),documentElement:{appendChild(){},removeChild(){}}},window:{SCHOOL_CONFIG:{}},URL,Blob,FormData,TextEncoder,Uint8Array});
+const c=vm.createContext({console,Date,Number,String,RegExp,Error,globalThis:null,document:{querySelectorAll:()=>[],getElementById:element,createElement:()=>({}),documentElement:{appendChild(){},removeChild(){}}},window:{SCHOOL_CONFIG:{}},URL,Blob,FormData,TextEncoder,Uint8Array});
 c.globalThis=c;c.SCHOOL_CONFIG={};c.window=c;c.setTimeout=setTimeout;c.clearTimeout=clearTimeout;c.ArrayBuffer=ArrayBuffer;c.Promise=Promise;c.self=c;
 vm.runInContext(await fs.readFile(require.resolve(packagePath+'/dist/exceljs.min.js'),'utf8'),c);
 vm.runInContext(await fs.readFile(new URL('../export-xlsx.js',import.meta.url),'utf8'),c);

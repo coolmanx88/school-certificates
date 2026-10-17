@@ -33,7 +33,7 @@ function initialize_() {
 function doGet(e) {
   const t = HtmlService.createTemplateFromFile('Portal');
   t.page = e && e.parameter && e.parameter.page === 'admin' ? 'admin' : 'teacher';
-  return t.evaluate().setTitle('مدرسة معاذ بن جبل — سجل التدريب')
+  return t.evaluate().setTitle('مدرسة معاذ بن جبل — بوابة المعلمين')
     .addMetaTag('viewport','width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -227,11 +227,11 @@ function rpc_(request) {
       }
       return ok_({ok:true});
     }
-    if(path==='/certificates'&&method==='GET')return ok_(rows_('Certificates').reverse().map(r=>({id:r[0],name:r[2],title:r[3],provider:r[4],date:dateText_(r[5]),hours:Number(r[6]),category:r[7],year:r[8],status:r[11]})));
+    if(path==='/certificates'&&method==='GET')return ok_(rows_('Certificates').reverse().map(r=>({id:r[0],name:r[2],title:r[3],provider:r[4],date:dateText_(r[5]),hours:Number(r[6]),category:r[7],year:r[8],status:r[11]==='approved'?'approved':'pending'})));
     const match=path.match(/^\/certificates\/([a-f0-9]{64})(\/file)?$/);
     if(match){const records=rows_('Certificates'),i=records.findIndex(r=>r[0]===match[1]);if(i<0)throw Error('السجل غير موجود.');
       if(match[2]&&method==='GET'){const file=DriveApp.getFileById(records[i][9]);return {status:200,fileBase64:Utilities.base64Encode(file.getBlob().getBytes()),mime:'application/pdf'};}
-      if(!match[2]&&method==='PATCH'&&['pending','approved','correction'].includes(body.status)){sheet_('Certificates').getRange(i+2,12).setValue(body.status);audit_(uid,'status:'+body.status,match[1]);return ok_({ok:true});}
+      if(!match[2]&&method==='PATCH'&&['pending','approved'].includes(body.status)){sheet_('Certificates').getRange(i+2,12).setValue(body.status);audit_(uid,'status:'+body.status,match[1]);return ok_({ok:true});}
     }
     throw Error('طلب غير مدعوم.');
   }catch(e){const message=String(e.message);return {status:message==='SESSION'?401:message==='FORBIDDEN'?403:400,data:{error:message==='SESSION'?'انتهت الجلسة. سجل الدخول مجددًا.':message==='FORBIDDEN'?'هذه الصلاحية للمسؤول فقط.':message}};}

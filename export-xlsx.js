@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const statusLabels={pending:'بانتظار المراجعة',approved:'معتمد',correction:'يحتاج تصحيحًا'};
+  const statusLabels={approved:'معتمد',pending:'بانتظار المراجعة'};
   function certificateName(title){return (String(title||'').replace(/[\x00-\x1f\x7f/\\]/g,' ').trim().replace(/\.pdf$/i,'').trim().slice(0,180)||'شهادة')+'.pdf';}
   function createWorkbook(ExcelJS,records,filters={}){
     const workbook=new ExcelJS.Workbook();
@@ -19,7 +19,7 @@
     for(const record of records){
       let date=String(record.date||'');
       if(/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isFinite(Date.parse(date)))date=new Date(date+'T00:00:00Z');
-      const row=sheet.addRow([String(record.name||''),String(record.title||'')+'\n'+String(record.provider||''),date,Number(record.hours)||0,String(record.category||'')+'\n'+String(record.year||''),statusLabels[record.status]||String(record.status||''),certificateName(record.title)]);
+      const row=sheet.addRow([String(record.name||''),String(record.title||'')+'\n'+String(record.provider||''),date,Number(record.hours)||0,String(record.category||'')+'\n'+String(record.year||''),statusLabels[record.status]||statusLabels.pending,certificateName(record.title)]);
       row.height=44;
       row.eachCell(cell=>{cell.font={name:'Arial',size:11};cell.alignment={horizontal:'right',vertical:'middle',wrapText:true,readingOrder:'rtl'};cell.border={bottom:{style:'thin',color:{argb:'FFE1EAE5'}}};if(row.number%2===0)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF2F7F4'}};});
       row.getCell(3).numFmt='yyyy-mm-dd';row.getCell(3).alignment={horizontal:'center',vertical:'middle'};
