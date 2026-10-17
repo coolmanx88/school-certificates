@@ -10,7 +10,7 @@ function fixture(){
   class MockFormData{constructor(){this.file=new MockFile();}get(key){return key==='file'?this.file:'';}*[Symbol.iterator](){yield ['title','Test'];yield ['file',this.file];}}
   class Reader{readAsDataURL(){this.result='data:application/pdf;base64,JVBERi0xLjQ=';this.onload();}}
   const runner={withSuccessHandler(fn){this.success=fn;return this;},withFailureHandler(){return this;},rpc(request){assert.equal(request.path,'/certificates');reply=this.success;}};
-  const c=vm.createContext({console,window:{SCHOOL_CONFIG:{}},document:{body:{dataset:{page:'teacher'}},getElementById:node},FormData:MockFormData,File:MockFile,FileReader:Reader,google:{script:{run:runner}},sessionStorage:{getItem:()=>null},URL,Blob,TextEncoder,Uint8Array,setTimeout});
+  const c=vm.createContext({console,window:{SCHOOL_CONFIG:{}},document:{querySelectorAll:()=>[],body:{dataset:{page:'teacher'}},getElementById:node},FormData:MockFormData,File:MockFile,FileReader:Reader,google:{script:{run:runner}},sessionStorage:{getItem:()=>null},URL,Blob,TextEncoder,Uint8Array,setTimeout});
   vm.runInContext(code,c);return {node,button,form,get resets(){return resets;},reply:r=>reply(r)};
 }
 const success=fixture();success.form.onsubmit({preventDefault(){},target:success.form});await new Promise(setImmediate);

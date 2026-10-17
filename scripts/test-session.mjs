@@ -10,7 +10,7 @@ function page(){
     else if(req.path==='/logout'){valid=false;this.success({status:200,data:{ok:true}});}
     else throw Error('Unexpected request');
   }};
-  const c=vm.createContext({console,window:{SCHOOL_CONFIG:{}},document:{body:{dataset:{page:'teacher'}},getElementById:node},sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},google:{script:{run:runner}},FormData,Blob,URL,TextEncoder,Uint8Array,setTimeout});
+  const c=vm.createContext({console,window:{SCHOOL_CONFIG:{}},document:{querySelectorAll:()=>[],body:{dataset:{page:'teacher'}},getElementById:node},sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},google:{script:{run:runner}},FormData,Blob,URL,TextEncoder,Uint8Array,setTimeout});
   vm.runInContext(source,c);return {c,node};
 }
 const initial=page();vm.runInContext(`token='${sessionToken}';rememberSession();`,initial.c);

@@ -10,8 +10,8 @@ const spreadsheet={getSheetByName:n=>tabs.get(n),insertSheet(n){const s=sheet(n)
 const signed=b=>Array.from(b,x=>x>127?x-256:x),buffer=x=>typeof x==='string'?Buffer.from(x):Buffer.from(x.map(b=>(b+256)%256));
 const folders=new Map();
 function iterator(items){let i=0;return {hasNext:()=>i<items.length,next:()=>items[i++]};}
-function folder(id,name,parent){let description='';const f={getId:()=>id,getName:()=>name,setName:n=>{name=n;},getDescription:()=>description,setDescription:d=>{description=d;},isTrashed:()=>false,getParents:()=>iterator(parent?[folders.get(parent)]:[]),getFolders:()=>iterator([...folders.values()].filter(x=>x.parent===id)),getFoldersByName:n=>iterator([...folders.values()].filter(x=>x.parent===id&&x.getName()===n)),createFolder(n){return folder(crypto.randomUUID(),n,id);},parent,createFile(blob){const fileId=crypto.randomUUID();let fileName=blob.name,fileParent=id;const file={getId:()=>fileId,getName:()=>fileName,setName:n=>{fileName=n;},getParents:()=>iterator([folders.get(fileParent)]),moveTo:d=>{fileParent=d.getId();},getBlob:()=>blob,setTrashed:()=>files.delete(fileId)};files.set(fileId,file);return file;}};folders.set(id,f);return f;}
-folder('1Gt9CVz3ZPDkEeekgi0tb0NdxSTRqLx9Z','الشهادات');
+function folder(id,name,parent){let description='';const f={getId:()=>id,getName:()=>name,setName:n=>{name=n;},getDescription:()=>description,setDescription:d=>{description=d;},isTrashed:()=>false,getParents:()=>iterator(parent?[folders.get(parent)]:[]),getFilesByName:n=>iterator([...files.values()].filter(x=>x.getParents().next()?.getId()===id&&x.getName()===n)),getFolders:()=>iterator([...folders.values()].filter(x=>x.parent===id)),getFoldersByName:n=>iterator([...folders.values()].filter(x=>x.parent===id&&x.getName()===n)),createFolder(n){return folder(crypto.randomUUID(),n,id);},parent,createFile(blob){const fileId=crypto.randomUUID();let fileName=blob.name,fileParent=id;const file={getId:()=>fileId,getName:()=>fileName,setName:n=>{fileName=n;},getParents:()=>iterator([folders.get(fileParent)]),moveTo:d=>{fileParent=d.getId();},getBlob:()=>blob,setTrashed:()=>files.delete(fileId)};files.set(fileId,file);return file;}};folders.set(id,f);return f;}
+folder('school-root','مدرسة معاذ بن جبل');folder('1Gt9CVz3ZPDkEeekgi0tb0NdxSTRqLx9Z','الشهادات','school-root');
 const context=vm.createContext({console,Date,JSON,Math,Number,String,Array,Error,RegExp,Uint8Array,
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>props.get(k)||null,setProperty:(k,v)=>props.set(k,v),deleteProperty:k=>props.delete(k)})},
  CacheService:{getScriptCache:()=>({get:k=>cache.get(k)||null,put:(k,v)=>cache.set(k,v),remove:k=>cache.delete(k)})},
@@ -74,6 +74,29 @@ assert.equal(rpc({path:'/users/'+created.data.id,method:'PATCH',token:a.token,bo
 assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:newAccount}).status,400);
 assert.equal(rpc({path:'/me',token:createdUser.token}).status,401);
 assert.equal(rpc({path:'/certificates',token:a.token}).data.length,1);assert.equal(files.size,1);
+
+const baseFiles=files.size;
+for(const kind of ['weekly','term','portfolio']){
+ const upload={kind,filename:'خطة.pdf',fileBase64:body.fileBase64};
+ const saved=rpc({path:'/resources',method:'POST',token:t.token,body:upload});assert.equal(saved.status,200,JSON.stringify(saved));
+ const file=[...files.values()].at(-1),parent=file.getParents().next();
+ assert.equal(parent.getName(),{weekly:'الخطط الأسبوعية',term:'الخطة الفصلية',portfolio:'Teacher'}[kind]);
+ assert.equal(rpc({path:'/resources',method:'POST',token:t.token,body:upload}).data.filename,'خطة (2).pdf');
+}
+assert.equal(rpc({path:'/resources',method:'POST',token:t.token,body:{kind:'bogus',filename:'x.pdf',fileBase64:body.fileBase64}}).status,400);
+assert.equal(rpc({path:'/resources',method:'POST',token:t.token,body:{kind:'weekly',filename:'x.exe',fileBase64:body.fileBase64}}).status,400);
+assert.equal(rpc({path:'/resources',method:'POST',token:t.token,body:{kind:'weekly',filename:'x.docx',fileBase64:body.fileBase64}}).status,400);
+const resourceList=rpc({path:'/resources',token:t.token});assert.equal(resourceList.data.length,6);
+assert.equal(rpc({path:'/resources',token:a.token}).data.length,6);
+const resourceId=resourceList.data[0].id;
+assert.equal(rpc({path:'/resources/'+resourceId+'/file',token:a.token}).status,200);
+const stranger={values:['other','Other',null,null,null,'teacher']};
+assert.equal(context.resourceRequest_('/resources','GET',{},stranger).data.length,0);
+assert.throws(()=>context.resourceRequest_('/resources/'+resourceId+'/file','GET',{},stranger),/FORBIDDEN/);
+// Remove only test uploads to preserve the original account regression assertions.
+for(const [key,file] of [...files])if(file!==originalFile)files.delete(key);
+assert.equal(files.size,baseFiles);
+console.log('PASS: three resource destinations, two plan subfolders, duplicate filenames, file validation, listing and admin download.');
 assert.equal(rpc({path:'/logout',method:'POST',token:t.token}).status,200);assert.equal(rpc({path:'/certificates',token:t.token}).status,401);assert.equal(rpc({path:'/me',token:t.token}).status,401);
 // Login attempts cannot bypass the rate limit by calling /login directly.
 for(let i=0;i<11;i++)rpc({path:'/login',method:'POST',body:{identity:'3000000000',verifier:'0'.repeat(64)}});

@@ -87,6 +87,52 @@ function teacherFolder_(u) {
   if(!folder)folder=root.createFolder(folderName);
   folder.setDescription(tag);props.setProperty(prop,folder.getId());return folder;
 }
+const RESOURCE_TYPES={weekly:'الخطط الأسبوعية',term:'الخطة الفصلية',portfolio:'ملف الإنجاز'};
+function resourceSheet_(){
+  const ss=SpreadsheetApp.openById(SCHOOL.spreadsheet);let s=ss.getSheetByName('Resources');
+  if(!s){s=ss.insertSheet('Resources');s.appendRow(['id','userId','name','kind','filename','driveId','mime','created']);s.setFrozenRows(1);s.setRightToLeft(true);}return s;
+}
+function childFolder_(parent,name){const found=parent.getFoldersByName(name);if(found.hasNext())return found.next();return parent.createFolder(name);}
+function resourceFolder_(u,kind){
+  const parents=DriveApp.getFolderById(SCHOOL.folder).getParents();
+  if(!parents.hasNext())throw Error('يجب وضع مجلد الشهادات داخل مجلد المدرسة أولًا.');
+  const school=parents.next(),root=childFolder_(school,kind==='portfolio'?'ملف الإنجاز':'الخطط للمواد الدراسية');
+  const tag='school-teacher:'+u.values[0],all=root.getFolders();let teacher=null;
+  const name=String(u.values[1]).trim(),duplicate=rows_('Users').some(r=>r[0]!==u.values[0]&&String(r[1]).trim()===name);
+  const folderName=duplicate?name+' ('+u.values[0].slice(0,8)+')':name;
+  while(all.hasNext()){const f=all.next();if(f.getDescription()===tag){teacher=f;break;}}
+  if(!teacher){teacher=root.createFolder(folderName);teacher.setDescription(tag);}else teacher.setName(folderName);
+  if(kind==='portfolio')return teacher;
+  const weekly=childFolder_(teacher,RESOURCE_TYPES.weekly),term=childFolder_(teacher,RESOURCE_TYPES.term);return kind==='weekly'?weekly:term;
+}
+function resourceRequest_(path,method,body,u){
+  const uid=u.values[0];
+  if(path==='/resources'&&method==='POST'){
+    if(u.values[5]!=='teacher')throw Error('FORBIDDEN');
+    if(!Object.prototype.hasOwnProperty.call(RESOURCE_TYPES,body.kind))throw Error('اختر قسمًا صالحًا.');
+    const name=text_(body.filename,240).replace(/[\x00-\x1f\x7f/\\]/g,' ').trim();
+    const types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation'};
+    const ext=name.split('.').pop().toLowerCase(),mime=types[ext];if(!mime)throw Error('الصيغ المسموحة: PDF وWord وExcel وPowerPoint.');
+    if(typeof body.fileBase64!=='string'||body.fileBase64.length>Math.ceil(SCHOOL.maxBytes/3)*4)throw Error('الحد الأقصى 25 ميجابايت.');
+    const bytes=Utilities.base64Decode(body.fileBase64);if(!bytes.length||bytes.length>SCHOOL.maxBytes)throw Error('الملف فارغ أو يتجاوز 25 ميجابايت.');
+    const magic=bytes.slice(0,8).map(b=>(b+256)%256);
+    const valid=ext==='pdf'?String.fromCharCode.apply(null,magic.slice(0,5))==='%PDF-':ext.endsWith('x')?magic[0]===80&&magic[1]===75:magic.slice(0,4).join(',')==='208,207,17,224';
+    if(!valid)throw Error('محتوى الملف لا يتوافق مع صيغته.');
+    const sheet=resourceSheet_(),folder=resourceFolder_(u,body.kind);let filename=name,n=2;const dot=name.lastIndexOf('.');
+    while(folder.getFilesByName(filename).hasNext())filename=name.slice(0,dot)+' ('+(n++)+')'+name.slice(dot);
+    const id=random_(),file=folder.createFile(Utilities.newBlob(bytes,mime,filename));
+    try{sheet.appendRow([id,uid,safe_(u.values[1]),body.kind,safe_(filename),file.getId(),mime,new Date().toISOString()]);}catch(e){file.setTrashed(true);throw e;}
+    audit_(uid,'resource-upload:'+body.kind,id);return ok_({ok:true,filename});
+  }
+  resourceSheet_();
+  if(path==='/resources'&&method==='GET')return ok_(rows_('Resources').filter(r=>u.values[5]==='admin'||r[1]===uid).reverse().map(r=>({id:r[0],name:r[2],kind:r[3],filename:r[4]})));
+  const match=path.match(/^\/resources\/([a-f0-9]{64})\/file$/);
+  if(match&&method==='GET'){
+    const row=rows_('Resources').find(r=>r[0]===match[1]);if(!row)throw Error('الملف غير موجود.');
+    if(u.values[5]!=='admin'&&row[1]!==uid)throw Error('FORBIDDEN');
+    const file=DriveApp.getFileById(row[5]);return {status:200,fileBase64:Utilities.base64Encode(file.getBlob().getBytes()),mime:row[6]};
+  }throw Error('طلب غير مدعوم.');
+}
 function audit_(uid,action,id) { try{sheet_('Audit').appendRow([new Date().toISOString(),uid,action,id||'']);}catch(e){console.error('Audit write failed');} }
 function session_(token) {
   if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(token))throw Error('SESSION');
@@ -135,6 +181,7 @@ function rpc_(request) {
       audit_(uid,'password-change');return ok_({ok:true});
     }
     if(u.values[6])throw Error('غيّر كلمة المرور المؤقتة أولًا.');
+    if(path==='/resources'||path.startsWith('/resources/'))return resourceRequest_(path,method,body,u);
     if(path==='/certificates'&&method==='POST') {
       if(u.values[5]!=='teacher')throw Error('FORBIDDEN');
       const title=text_(body.title,200),provider=text_(body.provider,200),category=text_(body.category,200),year=text_(body.year,30),date=text_(body.date,10),hours=Number(body.hours);

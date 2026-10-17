@@ -1,13 +1,14 @@
 'use strict';
 const $=id=>document.getElementById(id),base=(window.SCHOOL_CONFIG?.apiUrl||'').replace(/\/$/,'');
 let token='',user=null,records=[],accountRecords=[];
+let selectedSection='certificates',selectedKind='weekly',resourceRecords=[];
 const labels={pending:'بانتظار المراجعة',approved:'معتمد',correction:'يحتاج تصحيحًا'};
 function notice(text){$('notice').textContent=text;}
 function uploadFeedback(text,state='success',reveal=true){const status=$('uploadStatus');status.textContent=text;status.dataset.state=state;status.hidden=false;if(reveal){status.scrollIntoView({behavior:'smooth',block:'nearest'});status.focus({preventScroll:true});}}
 async function api(path,options={}){
   let body=options.body&&!(options.body instanceof FormData)?JSON.parse(options.body):{};
   if(options.body instanceof FormData){
-    body={};for(const [key,value]of options.body){if(value instanceof File){body.fileBase64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('تعذر قراءة الملف.'));r.readAsDataURL(value);});}else body[key]=value;}
+    body={};for(const [key,value]of options.body){if(value instanceof File){body.filename=value.name;body.fileBase64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('تعذر قراءة الملف.'));r.readAsDataURL(value);});}else body[key]=value;}
   }
   const result=await new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(()=>reject(Error('تعذر الاتصال. حاول لاحقًا.'))).rpc({path,method:options.method||'GET',token,body}));
   if(!result||typeof result.status!=='number')throw Error('تعذر قراءة استجابة الخدمة. حدّث الصفحة، وتأكد من نشر آخر إصدار للتطبيق.');
@@ -25,9 +26,9 @@ const SESSION_KEY='muadh-school-session-v1';
 function rememberSession(){try{sessionStorage.setItem(SESSION_KEY,token);}catch{}}
 function savedSession(){try{return sessionStorage.getItem(SESSION_KEY)||'';}catch{return '';}}
 function forgetSession(){try{sessionStorage.removeItem(SESSION_KEY);}catch{}}
-function logout(){if($('resetAccountDialog').open)$('resetAccountDialog').close();$('resetAccountForm').reset();$('uploadStatus').textContent='';$('uploadStatus').hidden=true;forgetSession();token='';user=null;records=[];accountRecords=[];$('accountRows').replaceChildren();$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
+function logout(){selectedSection='certificates';resourceRecords=[];$('resourceRows').replaceChildren();$('resourceForm').reset();$('resourceStatus').hidden=true;$('resources').hidden=true;$('sectionNav').hidden=true;if($('resetAccountDialog').open)$('resetAccountDialog').close();$('resetAccountForm').reset();$('uploadStatus').textContent='';$('uploadStatus').hidden=true;forgetSession();token='';user=null;records=[];accountRecords=[];$('accountRows').replaceChildren();$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
 async function busy(form,fn){const b=form.querySelector('button');b.disabled=true;try{await fn();}catch(e){notice(e.message);if(form.id==='uploadForm')uploadFeedback(e.message,'error');}finally{b.disabled=false;}}
-function show(){ $('login').hidden=true;$('workspace').hidden=false;$('welcome').textContent='مرحبًا، '+user.name;$('passwordBox').hidden=!user.mustChange;$('teacher').hidden=user.mustChange||user.role!=='teacher';$('admin').hidden=user.mustChange||user.role!=='admin';}
+function show(){selectedSection='certificates';document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.section==='certificates')));$('sectionNav').hidden=user.mustChange;$('resources').hidden=true; $('login').hidden=true;$('workspace').hidden=false;$('welcome').textContent='مرحبًا، '+user.name;$('passwordBox').hidden=!user.mustChange;$('teacher').hidden=user.mustChange||user.role!=='teacher';$('admin').hidden=user.mustChange||user.role!=='admin';}
 $('loginForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));const challenge=await json('/challenge',{identity:input.identity});const verifier=await derive(input.password,challenge.salt,challenge.rounds);const result=await json('/login',{identity:input.identity,verifier});token=result.token;user=result.user;if(document.body.dataset.page==='admin'&&user.role!=='admin'){await api('/logout',{method:'POST'});logout();throw Error('هذه الصفحة مخصصة للمسؤول فقط.');}rememberSession();e.target.reset();show();notice('تم تسجيل الدخول.');if(user.role==='admin'&&!user.mustChange)await load();});};
 $('logout').onclick=async()=>{try{await api('/logout',{method:'POST'});}catch{}logout();notice('تم تسجيل الخروج.');};
 $('passwordForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));if(input.current===input.password)throw Error('اختر كلمة مرور جديدة مختلفة.');const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');await json('/password',{current:await derive(input.current,user.salt),verifier:await derive(input.password,salt),salt});user.salt=salt;user.mustChange=false;e.target.reset();show();notice('تم تغيير كلمة المرور.');if(user.role==='admin')await load();});};
@@ -106,3 +107,35 @@ $('resetAccountForm').onsubmit=async e=>{
 };
 
 $('resetAccountDialog').oncancel=e=>{if($('cancelResetAccount').disabled)e.preventDefault();};
+
+const resourceLabels={weekly:'الخطط الأسبوعية',term:'الخطة الفصلية',portfolio:'ملف الإنجاز'};
+function resourceFeedback(text,state){const el=$('resourceStatus');el.textContent=text;el.dataset.state=state;el.hidden=false;el.scrollIntoView({block:'nearest',behavior:'smooth'});}
+async function selectSection(section){
+  selectedSection=section;$('teacher').hidden=user.mustChange||user.role!=='teacher'||section!=='certificates';$('admin').hidden=user.mustChange||user.role!=='admin'||section!=='certificates';
+  $('resources').hidden=user.mustChange||section==='certificates';
+  document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.section===section)));
+  if(section==='certificates')return;
+  selectedKind=section==='portfolio'?'portfolio':'weekly';$('resourceForm').reset();$('resourceStatus').hidden=true;
+  $('resourceTitle').textContent=section==='portfolio'?'ملف الإنجاز':'الخطط للمواد الدراسية';$('planChoices').hidden=section==='portfolio';
+  $('resourceForm').hidden=user.role!=='teacher';$('resourceAdminSearch').hidden=user.role!=='admin';$('resourceSearch').value='';
+  resourceRecords=[];renderResources();try{await loadResources();}catch(e){notice(e.message);}
+}
+async function loadResources(){resourceRecords=await (await api('/resources')).json();renderResources();}
+function renderResources(){
+  $('resourceSubtitle').textContent=resourceLabels[selectedKind];document.querySelectorAll('[data-kind]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.kind===selectedKind)));
+  const q=$('resourceSearch').value.trim().toLowerCase(),list=resourceRecords.filter(r=>r.kind===selectedKind&&[r.name,r.filename].join(' ').toLowerCase().includes(q));
+  $('resourceRows').replaceChildren();$('resourceEmpty').hidden=!!list.length;
+  for(const r of list){const tr=document.createElement('tr');cell(tr,r.name);const td=cell(tr,'');const name=document.createElement('bdi');name.textContent=r.filename;td.append(name);
+    const button=document.createElement('button');button.textContent='تنزيل الملف';button.onclick=async()=>{button.disabled=true;try{const response=await api('/resources/'+r.id+'/file'),url=URL.createObjectURL(await response.blob()),a=document.createElement('a');a.href=url;a.download=r.filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch(e){notice(e.message);}finally{button.disabled=false;}};cell(tr,'').append(button);$('resourceRows').append(tr);}
+}
+document.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>selectSection(b.dataset.section));
+document.querySelectorAll('[data-kind]').forEach(b=>b.onclick=()=>{selectedKind=b.dataset.kind;$('resourceForm').reset();$('resourceStatus').hidden=true;renderResources();});
+$('resourceSearch').oninput=renderResources;
+$('refreshResources').onclick=async()=>{try{await loadResources();}catch(e){notice(e.message);}};
+$('resourceForm').onsubmit=async e=>{
+  e.preventDefault();const form=e.target,button=form.querySelector('button');button.disabled=true;
+  try{const data=new FormData(form),file=data.get('file');if(!file.size||file.size>25*1024*1024)throw Error('اختر ملفًا غير فارغ لا يتجاوز 25 ميجابايت.');data.set('kind',selectedKind);resourceFeedback('جارٍ رفع الملف…','loading');
+    const result=await (await api('/resources',{method:'POST',body:data})).json();form.reset();resourceFeedback('تم رفع الملف بنجاح: '+result.filename,'success');
+    try{await loadResources();}catch{notice('تم الحفظ. تعذر تحديث القائمة؛ اضغط تحديث الملفات.');}
+  }catch(e){resourceFeedback(e.message,'error');}finally{button.disabled=false;}
+};
