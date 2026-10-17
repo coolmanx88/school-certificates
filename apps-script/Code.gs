@@ -141,12 +141,6 @@ function session_(token) {
   if(!u||!active_(u)||u.values[7]!==session.version)throw Error('SESSION');return u;
 }
 function active_(u){return u.values[8]!==false&&String(u.values[8]).toLowerCase()!=='false';}
-function loginRate_(identity,increment) {
-  const p=PropertiesService.getScriptProperties(),k='attempt:'+(userBy_('identity',key_(identity))?key_(identity):'unknown'),now=Date.now();
-  let data=JSON.parse(p.getProperty(k)||'null');if(!data||data.until<now)data={count:0,until:now+15*60000};
-  if(data.count>=10)throw Error('محاولات كثيرة. حاول بعد 15 دقيقة.');
-  if(increment){data.count++;p.setProperty(k,JSON.stringify(data));}
-}
 function requireAdmin_(u) { if(u.values[5]!=='admin')throw Error('FORBIDDEN'); }
 function rpc(request) { return JSON.parse(JSON.stringify(rpc_(request))); }
 function dateText_(value) { return value instanceof Date ? Utilities.formatDate(value, 'Asia/Riyadh', 'yyyy-MM-dd') : String(value || ''); }
@@ -158,11 +152,11 @@ function rpc_(request) {
     const path=request.path,method=request.method||'GET',body=request.body||{};
     if(path==='/challenge'&&method==='POST') {
       const identity=text_(body.identity,30);if(!/^\d{10}$/.test(identity))throw Error('رقم الهوية يتكون من عشرة أرقام.');
-      loginRate_(identity,true);const u=userBy_('identity',key_(identity));
+      const u=userBy_('identity',key_(identity));
       return ok_({salt:u?u.values[3]:key_('fake:'+identity).slice(0,32),rounds:SCHOOL.rounds});
     }
     if(path==='/login'&&method==='POST') {
-      const identity=text_(body.identity,30);loginRate_(identity,true);
+      const identity=text_(body.identity,30);
       const u=userBy_('identity',key_(identity));
       if(!u||!active_(u)||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!equal_(u.values[4],key_(body.verifier)))throw Error('رقم الهوية أو كلمة المرور غير صحيحة أو الحساب معطّل.');
       const token=random_();CacheService.getScriptCache().put('session:'+hash_(token),JSON.stringify({uid:u.values[0],version:u.values[7]}),7200);
