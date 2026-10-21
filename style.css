@@ -2,3 +2,5 @@
 @media(min-width:850px){#admin>.card:has(#search){display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:0 20px}#admin>.card:has(#search)>.toolbar,#admin>.card:has(#search)>.tablewrap,#admin>.card:has(#search)>#empty{grid-column:1/-1}#admin>.card:has(#search)>label{margin-bottom:24px}}
 @media(max-width:760px){header{padding:14px 20px}.brand{font-size:17px}.school-logo{width:62px;height:62px}.header-label{display:none}main{padding:24px 18px}.intro{padding:24px}.card{padding:22px}.grid{grid-template-columns:1fr}.stats{gap:10px}.stat-card{padding:16px}.stats strong{font-size:28px}.stats small{display:none}.stat-label{font-size:11px}#sectionNav .account-actions{gap:9px}#sectionNav button{padding:13px 10px;gap:8px;font-size:12px;flex-direction:column;align-items:flex-start}#sectionNav button small{font-size:10px}.nav-symbol{height:29px;min-width:29px;font-size:11px}.toolbar{flex-wrap:wrap;gap:12px}.intro p{font-size:12px}td,th{padding:12px 10px}dialog{padding:22px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+
+#modeSwitchBox{margin:0;min-width:190px}#modeSwitch{margin-top:4px;font-size:13px}

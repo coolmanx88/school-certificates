@@ -1,6 +1,10 @@
 'use strict';
 const $=id=>document.getElementById(id),base=(window.SCHOOL_CONFIG?.apiUrl||'').replace(/\/$/,'');
 let token='',user=null,records=[],accountRecords=[];
+let viewMode='admin';
+function canTeach(){return user?.role==='teacher'||user?.canTeach===true;}
+function adminView(){return user?.role==='admin'&&viewMode==='admin';}
+function teacherView(){return canTeach()&&viewMode==='teacher';}
 let selectedSection='certificates',selectedKind='weekly',resourceRecords=[];
 const labels={approved:'معتمد',pending:'بانتظار المراجعة'};
 function notice(text){$('notice').textContent=text;}
@@ -10,6 +14,7 @@ async function api(path,options={}){
   if(options.body instanceof FormData){
     body={};for(const [key,value]of options.body){if(value instanceof File){body.filename=value.name;body.fileBase64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=()=>reject(Error('تعذر قراءة الملف.'));r.readAsDataURL(value);});}else body[key]=value;}
   }
+  body.viewMode=viewMode;
   const result=await new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(()=>reject(Error('تعذر الاتصال. حاول لاحقًا.'))).rpc({path,method:options.method||'GET',token,body}));
   if(!result||typeof result.status!=='number')throw Error('تعذر قراءة استجابة الخدمة. حدّث الصفحة، وتأكد من نشر آخر إصدار للتطبيق.');
   if(result.status!==200){if(result.status===401)logout();throw Error(result.data?.error||'تعذر إتمام العملية.');}
@@ -26,9 +31,9 @@ const SESSION_KEY='muadh-school-session-v1';
 function rememberSession(){try{sessionStorage.setItem(SESSION_KEY,token);}catch{}}
 function savedSession(){try{return sessionStorage.getItem(SESSION_KEY)||'';}catch{return '';}}
 function forgetSession(){try{sessionStorage.removeItem(SESSION_KEY);}catch{}}
-function logout(){$('missingUploadsExport').hidden=true;$('resourceExport').hidden=true;selectedSection='certificates';resourceRecords=[];$('resourceRows').replaceChildren();$('resourceForm').reset();$('resourceStatus').hidden=true;$('resources').hidden=true;$('sectionNav').hidden=true;if($('resetAccountDialog').open)$('resetAccountDialog').close();$('resetAccountForm').reset();$('uploadStatus').textContent='';$('uploadStatus').hidden=true;forgetSession();token='';user=null;records=[];accountRecords=[];$('accountRows').replaceChildren();$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
+function logout(){viewMode='admin';$('modeSwitchBox').hidden=true;$('missingUploadsExport').hidden=true;$('resourceExport').hidden=true;selectedSection='certificates';resourceRecords=[];$('resourceRows').replaceChildren();$('resourceForm').reset();$('resourceStatus').hidden=true;$('resources').hidden=true;$('sectionNav').hidden=true;if($('resetAccountDialog').open)$('resetAccountDialog').close();$('resetAccountForm').reset();$('uploadStatus').textContent='';$('uploadStatus').hidden=true;forgetSession();token='';user=null;records=[];accountRecords=[];$('accountRows').replaceChildren();$('rows').replaceChildren();$('workspace').hidden=true;$('login').hidden=false;$('loginForm').reset();}
 async function busy(form,fn){const b=form.querySelector('button');b.disabled=true;try{await fn();}catch(e){notice(e.message);if(form.id==='uploadForm')uploadFeedback(e.message,'error');}finally{b.disabled=false;}}
-function show(){$('missingUploadsExport').hidden=user.mustChange||user.role!=='admin';selectedSection='certificates';document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.section==='certificates')));$('sectionNav').hidden=user.mustChange;$('resources').hidden=true; $('login').hidden=true;$('workspace').hidden=false;$('welcome').textContent='مرحبًا، '+user.name;$('passwordBox').hidden=!user.mustChange;$('teacher').hidden=user.mustChange||user.role!=='teacher';$('admin').hidden=user.mustChange||user.role!=='admin';}
+function show(){if(user.role==='teacher')viewMode='teacher';if(user.role==='admin'&&!canTeach())viewMode='admin';$('modeSwitchBox').hidden=user.mustChange||user.role!=='admin'||!canTeach();$('modeSwitch').value=viewMode;$('missingUploadsExport').hidden=user.mustChange||!adminView();selectedSection='certificates';document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.section==='certificates')));$('sectionNav').hidden=user.mustChange;$('resources').hidden=true; $('login').hidden=true;$('workspace').hidden=false;$('welcome').textContent='مرحبًا، '+user.name;$('passwordBox').hidden=!user.mustChange;$('teacher').hidden=user.mustChange||!teacherView();$('admin').hidden=user.mustChange||!adminView();}
 $('loginForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));const challenge=await json('/challenge',{identity:input.identity});const verifier=await derive(input.password,challenge.salt,challenge.rounds);const result=await json('/login',{identity:input.identity,verifier});token=result.token;user=result.user;if(document.body.dataset.page==='admin'&&user.role!=='admin'){await api('/logout',{method:'POST'});logout();throw Error('هذه الصفحة مخصصة للمسؤول فقط.');}rememberSession();e.target.reset();show();notice('تم تسجيل الدخول.');if(user.role==='admin'&&!user.mustChange)await load();});};
 $('logout').onclick=async()=>{try{await api('/logout',{method:'POST'});}catch{}logout();notice('تم تسجيل الخروج.');};
 $('passwordForm').onsubmit=e=>{e.preventDefault();busy(e.target,async()=>{const input=Object.fromEntries(new FormData(e.target));if(input.current===input.password)throw Error('اختر كلمة مرور جديدة مختلفة.');const salt=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');await json('/password',{current:await derive(input.current,user.salt),verifier:await derive(input.password,salt),salt});user.salt=salt;user.mustChange=false;e.target.reset();show();notice('تم تغيير كلمة المرور.');if(user.role==='admin')await load();});};
@@ -66,14 +71,19 @@ async function loadAccounts(){accountRecords=await (await api('/users')).json();
 function renderAccounts(){
   const query=$('accountSearch').value.trim().toLowerCase();$('accountRows').replaceChildren();
   for(const account of accountRecords.filter(a=>a.name.toLowerCase().includes(query))){
-    const row=document.createElement('tr');cell(row,account.name);cell(row,account.role==='admin'?'مسؤول':'معلم');cell(row,account.active?'فعّال':'معطّل');
-    const button=document.createElement('button');button.textContent=account.active?'تعطيل':'إعادة تفعيل';button.className='secondary';button.disabled=account.self;
+    const row=document.createElement('tr');cell(row,account.name);cell(row,account.role==='admin'?(account.canTeach?'مسؤول ومعلم':'مسؤول'):'معلم');cell(row,account.mergedInto?'تم توحيد الحساب':account.active?'فعّال':'معطّل');
+    const button=document.createElement('button');button.textContent=account.active?'تعطيل':'إعادة تفعيل';button.className='secondary';button.disabled=account.self||!!account.mergedInto;
     if(account.self)button.title='لا يمكن تعطيل حسابك الحالي.';
     button.onclick=async()=>{
       if(account.active&&!confirm('تعطيل حساب '+account.name+'؟ سيتوقف دخوله، وستبقى شهاداته محفوظة.'))return;
       button.disabled=true;
       try{await json('/users/'+account.id,{active:!account.active},'PATCH');await loadAccounts();notice(account.active?'تم تعطيل الحساب.':'تمت إعادة تفعيل الحساب.');}catch(e){notice(e.message);button.disabled=false;}
-    };const reset=document.createElement('button');reset.textContent='إعادة تعيين كلمة المرور';reset.className='secondary';reset.onclick=()=>openPasswordReset(account);const actions=document.createElement('div');actions.className='account-actions';actions.append(button,reset);cell(row,'').append(actions);$('accountRows').append(row);
+    };const reset=document.createElement('button');reset.textContent='إعادة تعيين كلمة المرور';reset.className='secondary';reset.onclick=()=>openPasswordReset(account);const actions=document.createElement('div');actions.className='account-actions';actions.append(button,reset);
+    if(account.role==='admin'){
+      const teaching=document.createElement('button');teaching.className='secondary';teaching.textContent=account.canTeach?'إلغاء وضع المعلم':'تمكين وضع المعلم';
+      teaching.onclick=async()=>{teaching.disabled=true;try{const enabled=!account.canTeach;await json('/users/'+account.id+'/teaching',{canTeach:enabled},'PATCH');if(account.self){user.canTeach=enabled;show();}await loadAccounts();notice(enabled?'تم تمكين وضع المعلم للمسؤول.':'تم إلغاء وضع المعلم.');}catch(e){notice(e.message);}finally{teaching.disabled=false;}};actions.append(teaching);
+    }
+    cell(row,'').append(actions);$('accountRows').append(row);
   }
 }
 $('accountSearch').oninput=renderAccounts;
@@ -111,13 +121,13 @@ $('resetAccountDialog').oncancel=e=>{if($('cancelResetAccount').disabled)e.preve
 const resourceLabels={weekly:'الخطط الأسبوعية',term:'الخطة الفصلية',portfolio:'ملف الإنجاز'};
 function resourceFeedback(text,state){const el=$('resourceStatus');el.textContent=text;el.dataset.state=state;el.hidden=false;el.scrollIntoView({block:'nearest',behavior:'smooth'});}
 async function selectSection(section){
-  selectedSection=section;$('teacher').hidden=user.mustChange||user.role!=='teacher'||section!=='certificates';$('admin').hidden=user.mustChange||user.role!=='admin'||section!=='certificates';
+  selectedSection=section;$('teacher').hidden=user.mustChange||!teacherView()||section!=='certificates';$('admin').hidden=user.mustChange||!adminView()||section!=='certificates';
   $('resources').hidden=user.mustChange||section==='certificates';
   document.querySelectorAll('[data-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.section===section)));
   if(section==='certificates')return;
   selectedKind=section==='portfolio'?'portfolio':'weekly';$('resourceForm').reset();$('resourceStatus').hidden=true;
   $('resourceTitle').textContent=section==='portfolio'?'ملف الإنجاز':'الخطط للمواد الدراسية';$('planChoices').hidden=section==='portfolio';
-  $('resourceExport').hidden=user.role!=='admin';$('resourceForm').hidden=user.role!=='teacher';$('resourceAdminSearch').hidden=user.role!=='admin';$('resourceSearch').value='';
+  $('resourceExport').hidden=!adminView();$('resourceForm').hidden=!teacherView();$('resourceAdminSearch').hidden=!adminView();$('resourceSearch').value='';
   resourceRecords=[];renderResources();try{await loadResources();}catch(e){notice(e.message);}
 }
 async function loadResources(){resourceRecords=await (await api('/resources')).json();renderResources();}
@@ -157,4 +167,11 @@ $('missingUploadsExport').onclick=async()=>{
     const workbook=SchoolExcel.createReportWorkbook(ExcelJS,{title:'المعلمون الذين لم يستكملوا الرفع',headers:['اسم المعلم','الأقسام التي لم يرفع فيها'],rows:list.map(r=>[r.name,r.missing.join('، ')]),widths:[36,90],note:'المعلمون الفعّالون فقط. يُحتسب رفع خطة أسبوعية أو فصلية ضمن قسم الخطط. عدد المعلمين: '+list.length});
     await downloadReport(workbook,'تقرير-عدم-الرفع-'+new Date().toISOString().slice(0,10));notice(list.length?'تم تصدير تقرير عدم الرفع لعدد '+list.length+' معلمًا.':'جميع المعلمين الفعّالين رفعوا في الأقسام الثلاثة. تم تصدير تقرير خالٍ من المتأخرين.');
   }catch(e){notice(e.message);}finally{button.disabled=false;}
+};
+
+$('modeSwitch').onchange=async()=>{
+  if(user?.role!=='admin'||!canTeach())return;
+  viewMode=$('modeSwitch').value==='teacher'?'teacher':'admin';resourceRecords=[];$('resourceRows').replaceChildren();$('resourceForm').reset();$('resourceStatus').hidden=true;$('uploadStatus').hidden=true;
+  show();notice(viewMode==='teacher'?'وضع المعلم: تُحفظ الملفات باسمك.':'وضع المسؤول: مراجعة الملفات وإدارة الحسابات.');
+  if(adminView()){try{await load();}catch(e){notice(e.message);}}
 };

@@ -18,14 +18,14 @@ function initialize_() {
   if (!p.getProperty('SECRET')) p.setProperty('SECRET', random_());
   const ss = SpreadsheetApp.openById(SCHOOL.spreadsheet);
   const headers = {
-    Users: ['id','name','identityKey','salt','passwordDigest','role','mustChange','version','active'],
+    Users: ['id','name','identityKey','salt','passwordDigest','role','mustChange','version','active','canTeach','mergedInto'],
     Certificates: ['id','userId','name','title','provider','date','hours','category','year','driveId','digest','status','created'],
     Audit: ['time','userId','action','recordId']
   };
   Object.keys(headers).forEach(name => {
     let s = ss.getSheetByName(name);
     if (!s) { s = ss.insertSheet(name); s.appendRow(headers[name]); s.setFrozenRows(1); }
-    if(name==='Users')s.getRange(1,9).setValue('active');
+    if(name==='Users')s.getRange(1,9,1,3).setValues([['active','canTeach','mergedInto']]);
     s.setRightToLeft(true);
   });
   SpreadsheetApp.getUi().alert('تمت التهيئة. املأ الأسماء والهويات ثم اختر تفعيل الحسابات المكتملة.');
@@ -76,7 +76,7 @@ function organizeExistingCertificates_() {
 function teacherFolder_(u) {
   const uid=u.values[0],name=String(u.values[1]).trim(),root=DriveApp.getFolderById(SCHOOL.folder);
   const tag='school-teacher:'+uid,props=PropertiesService.getScriptProperties(),prop='folder:'+uid;
-  const duplicate=rows_('Users').filter(r=>r[5]==='teacher'&&String(r[1]).trim()===name).length>1;
+  const duplicate=rows_('Users').filter(r=>canTeach_({values:r})&&active_({values:r})&&String(r[1]).trim()===name).length>1;
   const folderName=duplicate?name+' ('+uid.slice(0,8)+')':name;
   const known=props.getProperty(prop);
   if(known){try{const f=DriveApp.getFolderById(known),parents=f.getParents();let inside=false;while(parents.hasNext())if(parents.next().getId()===SCHOOL.folder)inside=true;
@@ -98,7 +98,7 @@ function resourceFolder_(u,kind){
   if(!parents.hasNext())throw Error('يجب وضع مجلد الشهادات داخل مجلد المدرسة أولًا.');
   const school=parents.next(),root=childFolder_(school,kind==='portfolio'?'ملف الإنجاز':'الخطط للمواد الدراسية');
   const tag='school-teacher:'+u.values[0],all=root.getFolders();let teacher=null;
-  const name=String(u.values[1]).trim(),duplicate=rows_('Users').some(r=>r[0]!==u.values[0]&&String(r[1]).trim()===name);
+  const name=String(u.values[1]).trim(),duplicate=rows_('Users').some(r=>r[0]!==u.values[0]&&active_({values:r})&&canTeach_({values:r})&&String(r[1]).trim()===name);
   const folderName=duplicate?name+' ('+u.values[0].slice(0,8)+')':name;
   while(all.hasNext()){const f=all.next();if(f.getDescription()===tag){teacher=f;break;}}
   if(!teacher){teacher=root.createFolder(folderName);teacher.setDescription(tag);}else teacher.setName(folderName);
@@ -108,7 +108,7 @@ function resourceFolder_(u,kind){
 function resourceRequest_(path,method,body,u){
   const uid=u.values[0];
   if(path==='/resources'&&method==='POST'){
-    if(u.values[5]!=='teacher')throw Error('FORBIDDEN');
+    if(!canTeach_(u))throw Error('FORBIDDEN');
     if(!Object.prototype.hasOwnProperty.call(RESOURCE_TYPES,body.kind))throw Error('اختر قسمًا صالحًا.');
     const name=text_(body.filename,240).replace(/[\x00-\x1f\x7f/\\]/g,' ').trim();
     const types={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation'};
@@ -125,7 +125,7 @@ function resourceRequest_(path,method,body,u){
     audit_(uid,'resource-upload:'+body.kind,id);return ok_({ok:true,filename});
   }
   resourceSheet_();
-  if(path==='/resources'&&method==='GET')return ok_(rows_('Resources').filter(r=>u.values[5]==='admin'||r[1]===uid).reverse().map(r=>({id:r[0],name:r[2],kind:r[3],filename:r[4]})));
+  if(path==='/resources'&&method==='GET')return ok_(rows_('Resources').filter(r=>(u.values[5]==='admin'&&body.viewMode!=='teacher')||r[1]===uid).reverse().map(r=>({id:r[0],name:r[2],kind:r[3],filename:r[4]})));
   const match=path.match(/^\/resources\/([a-f0-9]{64})\/file$/);
   if(match&&method==='GET'){
     const row=rows_('Resources').find(r=>r[0]===match[1]);if(!row)throw Error('الملف غير موجود.');
@@ -140,6 +140,8 @@ function session_(token) {
   const session=JSON.parse(value),u=userBy_('id',session.uid);
   if(!u||!active_(u)||u.values[7]!==session.version)throw Error('SESSION');return u;
 }
+function canTeach_(u){return u.values[5]==='teacher'||(u.values[5]==='admin'&&(u.values[9]===true||String(u.values[9]).toLowerCase()==='true'));}
+function publicUser_(u){return {id:u.values[0],name:u.values[1],role:u.values[5],canTeach:canTeach_(u),mustChange:!!u.values[6],salt:u.values[3]};}
 function active_(u){return u.values[8]!==false&&String(u.values[8]).toLowerCase()!=='false';}
 function requireAdmin_(u) { if(u.values[5]!=='admin')throw Error('FORBIDDEN'); }
 function rpc(request) { return JSON.parse(JSON.stringify(rpc_(request))); }
@@ -161,11 +163,11 @@ function rpc_(request) {
       if(!u||!active_(u)||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!equal_(u.values[4],key_(body.verifier)))throw Error('رقم الهوية أو كلمة المرور غير صحيحة أو الحساب معطّل.');
       const token=random_();CacheService.getScriptCache().put('session:'+hash_(token),JSON.stringify({uid:u.values[0],version:u.values[7]}),7200);
       PropertiesService.getScriptProperties().deleteProperty('attempt:'+key_(identity));
-      return ok_({token,user:{id:u.values[0],name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
+      return ok_({token,user:publicUser_(u)});
     }
     if(path.startsWith('/setup/'))return setupRequest_(request);
     const u=session_(request.token),uid=u.values[0];
-    if(path==='/me'&&method==='GET')return ok_({user:{id:u.values[0],name:u.values[1],role:u.values[5],mustChange:!!u.values[6],salt:u.values[3]}});
+    if(path==='/me'&&method==='GET')return ok_({user:publicUser_(u)});
     if(path==='/logout'&&method==='POST'){CacheService.getScriptCache().remove('session:'+hash_(request.token));return ok_({ok:true});}
     if(path==='/password'&&method==='POST') {
       if(!equal_(u.values[4],key_(body.current||''))||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!/^[a-f0-9]{32}$/.test(body.salt||'')||body.verifier===body.current)throw Error('تعذر تغيير كلمة المرور.');
@@ -177,7 +179,7 @@ function rpc_(request) {
     if(u.values[6])throw Error('غيّر كلمة المرور المؤقتة أولًا.');
     if(path==='/resources'||path.startsWith('/resources/'))return resourceRequest_(path,method,body,u);
     if(path==='/certificates'&&method==='POST') {
-      if(u.values[5]!=='teacher')throw Error('FORBIDDEN');
+      if(!canTeach_(u))throw Error('FORBIDDEN');
       const title=text_(body.title,200),provider=text_(body.provider,200),category=text_(body.category,200),year=text_(body.year,30),date=text_(body.date,10),hours=Number(body.hours);
       if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date||hours<0.5||hours>2000||!Number.isFinite(hours))throw Error('تحقق من التاريخ والساعات.');
       if(typeof body.fileBase64!=='string'||body.fileBase64.length>Math.ceil(SCHOOL.maxBytes/3)*4)throw Error('الملف يتجاوز الحد المسموح.');
@@ -196,7 +198,7 @@ function rpc_(request) {
       const certificates=new Set(rows_('Certificates').map(r=>r[1]));
       const plans=new Set(),portfolios=new Set();
       rows_('Resources').forEach(r=>{if(r[3]==='portfolio')portfolios.add(r[1]);else if(r[3]==='weekly'||r[3]==='term')plans.add(r[1]);});
-      const report=rows_('Users').filter(r=>r[5]==='teacher'&&active_({values:r})).map(r=>{
+      const report=rows_('Users').filter(r=>canTeach_({values:r})&&active_({values:r})).map(r=>{
         const missing=[];if(!certificates.has(r[0]))missing.push('الشهادات');if(!plans.has(r[0]))missing.push('الخطط للمواد الدراسية');if(!portfolios.has(r[0]))missing.push('ملف الإنجاز');
         return {name:r[1],missing};
       }).filter(r=>r.missing.length).sort((a,b)=>String(a.name).localeCompare(String(b.name),'ar'));
@@ -204,14 +206,14 @@ function rpc_(request) {
     }
     if(path==='/users'&&method==='POST'){
       const name=text_(body.name,120),identity=text_(body.identity,10);
-      if(!/^\d{10}$/.test(identity)||!['teacher','admin'].includes(body.role)||!/^[a-f0-9]{32}$/.test(body.salt||'')||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!Number.isInteger(body.passwordLength)||body.passwordLength<6||body.passwordLength>256)throw Error('تحقق من الاسم والهوية والصلاحية وكلمة المرور (6 أحرف على الأقل).');
+      if(!/^\d{10}$/.test(identity)||!['teacher','admin','admin_teacher'].includes(body.role)||!/^[a-f0-9]{32}$/.test(body.salt||'')||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!Number.isInteger(body.passwordLength)||body.passwordLength<6||body.passwordLength>256)throw Error('تحقق من الاسم والهوية والصلاحية وكلمة المرور (6 أحرف على الأقل).');
       const identityKey=key_(identity);
       if(userBy_('identity',identityKey))throw Error('رقم الهوية مسجل بالفعل. استخدم الحساب الموجود أو أعد تفعيله إذا كان معطّلًا.');
       const id=random_(),users=sheet_('Users');users.getRange(1,9).setValue('active');
-      users.appendRow([id,safe_(name),identityKey,body.salt,key_(body.verifier),body.role,true,1,true]);
+      users.appendRow([id,safe_(name),identityKey,body.salt,key_(body.verifier),body.role==='admin_teacher'?'admin':body.role,true,1,true,body.role==='admin_teacher','']);
       audit_(uid,'account-create',id);return ok_({ok:true,id});
     }
-    if(path==='/users'&&method==='GET'){const header=sheet_('Users').getRange(1,9);if(header.getValues()[0][0]!=='active')header.setValue('active');return ok_(rows_('Users').map(r=>({id:r[0],name:r[1],role:r[5],active:active_({values:r}),self:r[0]===uid})));}
+    if(path==='/users'&&method==='GET'){const header=sheet_('Users').getRange(1,9);if(header.getValues()[0][0]!=='active')header.setValue('active');return ok_(rows_('Users').map(r=>({id:r[0],name:r[1],role:r[5],canTeach:canTeach_({values:r}),mergedInto:r[10]||'',active:active_({values:r}),self:r[0]===uid})));}
     const resetMatch=path.match(/^\/users\/([a-f0-9]{64})\/password$/);
     if(resetMatch&&method==='POST'){
       if(!/^[a-f0-9]{32}$/.test(body.salt||'')||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!Number.isInteger(body.passwordLength)||body.passwordLength<6||body.passwordLength>256)throw Error('كلمة المرور المؤقتة يجب أن تتكون من 6 أحرف على الأقل.');
@@ -220,10 +222,17 @@ function rpc_(request) {
       audit_(uid,'account-password-reset',target.values[0]);
       return ok_({ok:true,self:target.values[0]===uid,active:active_(target)});
     }
+    const teachingMatch=path.match(/^\/users\/([a-f0-9]{64})\/teaching$/);
+    if(teachingMatch&&method==='PATCH'){
+      const target=userBy_('id',teachingMatch[1]);if(!target||target.values[5]!=='admin'||typeof body.canTeach!=='boolean')throw Error('هذا الخيار يخص حسابات المسؤولين فقط.');
+      sheet_('Users').getRange(1,10).setValue('canTeach');sheet_('Users').getRange(target.row,10).setValue(body.canTeach);
+      audit_(uid,body.canTeach?'teaching-enable':'teaching-disable',target.values[0]);return ok_({ok:true,self:uid===target.values[0],canTeach:body.canTeach});
+    }
     const userMatch=path.match(/^\/users\/([a-f0-9]{64})$/);
     if(userMatch&&method==='PATCH'){
       if(typeof body.active!=='boolean')throw Error('حالة الحساب غير صالحة.');
       const target=userBy_('id',userMatch[1]);if(!target)throw Error('الحساب غير موجود.');
+      if(body.active&&target.values[10])throw Error('هذا الحساب جرى توحيده مع حساب آخر ولا يمكن إعادة تفعيله.');
       if(!body.active&&target.values[5]==='admin'&&active_(target)&&rows_('Users').filter(r=>r[5]==='admin'&&active_({values:r})).length<=1)throw Error('لا يمكن تعطيل آخر مسؤول فعّال.');
       if(!body.active&&target.values[0]===uid)throw Error('لا يمكنك تعطيل الحساب الذي تستخدمه الآن.');
       if(active_(target)!==body.active){

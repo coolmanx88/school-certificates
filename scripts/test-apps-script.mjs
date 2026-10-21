@@ -139,5 +139,29 @@ assert.equal(rpc({path:'/login',method:'POST',body:{identity:'2000000000',verifi
 const afterReset=rpc({path:'/login',method:'POST',body:{identity:'2000000000',verifier:resetPayload.verifier}});assert.equal(afterReset.status,200);assert.equal(afterReset.data.user.mustChange,true);
 assert.equal(rpc({path:'/certificates',method:'POST',token:afterReset.data.token,body}).status,400);
 assert.equal(rpc({path:'/users/'+created.data.id+'/password',method:'POST',token:a.token,body:resetPayload}).status,200);assert.equal(context.active_(context.userBy_('id',created.data.id)),false);
+
+// A combined account keeps its administrator role and credentials, with explicit teaching permission.
+const dualBody={...body,title:'Admin teaching',fileBase64:Buffer.from('%PDF-1.4 dual upload').toString('base64')};
+assert.equal(rpc({path:'/certificates',method:'POST',token:a.token,body:dualBody}).status,403);
+const teacherToken=afterReset.data.token;
+assert.equal(rpc({path:'/users/'+adminId+'/teaching',method:'PATCH',token:teacherToken,body:{canTeach:true}}).status,400); // forced password change still enforced
+const beforeAdmin=context.userBy_('id',adminId).values.slice(2,5).join(':');
+assert.equal(rpc({path:'/users/'+adminId+'/teaching',method:'PATCH',token:a.token,body:{canTeach:true}}).status,200);
+assert.equal(rpc({path:'/me',token:a.token}).data.user.canTeach,true);assert.equal(rpc({path:'/me',token:a.token}).data.user.role,'admin');
+assert.equal(context.userBy_('id',adminId).values.slice(2,5).join(':'),beforeAdmin);
+assert.equal(rpc({path:'/reports/missing-uploads',token:a.token}).data.filter(r=>r.name==='Admin').length,1);
+assert.equal(rpc({path:'/certificates',method:'POST',token:a.token,body:dualBody}).status,200);
+assert.equal(context.rows_('Certificates').at(-1)[1],adminId);
+assert.equal(rpc({path:'/resources',method:'POST',token:a.token,body:{kind:'portfolio',filename:'Admin.pdf',fileBase64:dualBody.fileBase64}}).status,200);
+const adminOnlyResources=rpc({path:'/resources',token:a.token,body:{viewMode:'teacher'}});assert.equal(adminOnlyResources.data.length,1);assert.equal(adminOnlyResources.data[0].name,'Admin');
+assert.ok(rpc({path:'/resources',token:a.token}).data.length>1);
+assert.equal(rpc({path:'/users/'+adminId+'/teaching',method:'PATCH',token:a.token,body:{canTeach:false}}).status,200);
+assert.equal(rpc({path:'/certificates',method:'POST',token:a.token,body:dualBody}).status,403);
+assert.equal(rpc({path:'/me',token:a.token}).data.user.role,'admin');
+const mergedUser=context.userBy_('id',created.data.id);tabs.get('Users').getRange(mergedUser.row,11).setValue(adminId);
+assert.equal(rpc({path:'/users/'+created.data.id,method:'PATCH',token:a.token,body:{active:true}}).status,400);
+const dualSalt=crypto.randomBytes(16).toString('hex');assert.equal(rpc({path:'/users',method:'POST',token:a.token,body:{name:'Combined',identity:'5000000000',role:'admin_teacher',salt:dualSalt,verifier:derive('Ab12@x',dualSalt),passwordLength:6}}).status,200);
+const combined=rpc({path:'/login',method:'POST',body:{identity:'5000000000',verifier:derive('Ab12@x',dualSalt)}});assert.equal(combined.data.user.role,'admin');assert.equal(combined.data.user.canTeach,true);
+console.log('PASS: combined administrator/teacher permissions, unchanged credentials, own uploads, one report entry, permission revocation and merged-account reactivation protection.');
 const selfReset=rpc({path:'/users/'+adminId+'/password',method:'POST',token:a.token,body:resetPayload});assert.equal(selfReset.status,200);assert.equal(selfReset.data.self,true);assert.equal(rpc({path:'/me',token:a.token}).status,401);
 console.log('PASS: account activation, PBKDF2 login, one-time setup, password change, role restrictions, mock PDF upload, duplicate prevention, admin download/review, logout and immediate login retry without lockout.');
