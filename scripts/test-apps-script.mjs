@@ -90,6 +90,22 @@ assert.equal(rpc({path:'/resources',method:'POST',token:t.token,body:{kind:'week
 assert.equal(rpc({path:'/resources',method:'POST',token:t.token,body:{kind:'weekly',filename:'x.docx',fileBase64:body.fileBase64}}).status,400);
 const resourceList=rpc({path:'/resources',token:t.token});assert.equal(resourceList.data.length,6);
 assert.equal(rpc({path:'/resources',token:a.token}).data.length,6);
+assert.equal(rpc({path:'/reports/missing-uploads',token:t.token}).status,403);
+assert.equal(rpc({path:'/reports/missing-uploads',token:a.token}).data.length,0);
+const userSheet= tabs.get('Users');
+userSheet.appendRow(['report-none','No uploads','','','','teacher',false,1,true]);
+userSheet.appendRow(['report-plan','Same name','','','','teacher',false,1,true]);
+userSheet.appendRow(['report-cert','Same name','','','','teacher',false,1,true]);
+userSheet.appendRow(['report-disabled','Disabled','','','','teacher',false,1,false]);
+tabs.get('Resources').appendRow(['mock','report-plan','Same name','term','plan.pdf','','','']);
+tabs.get('Certificates').appendRow(['mock','report-cert','Same name','Title','','',1,'','','','','pending','']);
+const missingReport=rpc({path:'/reports/missing-uploads',token:a.token});assert.equal(missingReport.status,200);assert.equal(missingReport.data.length,3);
+assert.equal(missingReport.data.find(r=>r.name==='No uploads').missing.join(','),'الشهادات,الخطط للمواد الدراسية,ملف الإنجاز');
+const sameNames=missingReport.data.filter(r=>r.name==='Same name');assert.equal(sameNames.length,2);assert.ok(sameNames.some(r=>r.missing.join(',')==='الشهادات,ملف الإنجاز'));assert.ok(sameNames.some(r=>r.missing.join(',')==='الخطط للمواد الدراسية,ملف الإنجاز'));
+// Exclude fixture accounts and rows from the remaining regression tests.
+const actualRows=context.rows_;context.rows_=name=>actualRows(name).filter(r=>!String(r[0]).startsWith('report-')&&r[0]!=='mock');
+console.log('PASS: admin-only missing report, complete teachers excluded, disabled accounts excluded, distinct IDs with identical names and term plans counted.');
+
 const resourceId=resourceList.data[0].id;
 assert.equal(rpc({path:'/resources/'+resourceId+'/file',token:a.token}).status,200);
 const stranger={values:['other','Other',null,null,null,'teacher']};

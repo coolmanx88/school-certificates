@@ -191,6 +191,17 @@ function rpc_(request) {
       audit_(uid,'upload',id);return ok_({ok:true});
     }
     requireAdmin_(u);
+    if(path==='/reports/missing-uploads'&&method==='GET'){
+      resourceSheet_();
+      const certificates=new Set(rows_('Certificates').map(r=>r[1]));
+      const plans=new Set(),portfolios=new Set();
+      rows_('Resources').forEach(r=>{if(r[3]==='portfolio')portfolios.add(r[1]);else if(r[3]==='weekly'||r[3]==='term')plans.add(r[1]);});
+      const report=rows_('Users').filter(r=>r[5]==='teacher'&&active_({values:r})).map(r=>{
+        const missing=[];if(!certificates.has(r[0]))missing.push('الشهادات');if(!plans.has(r[0]))missing.push('الخطط للمواد الدراسية');if(!portfolios.has(r[0]))missing.push('ملف الإنجاز');
+        return {name:r[1],missing};
+      }).filter(r=>r.missing.length).sort((a,b)=>String(a.name).localeCompare(String(b.name),'ar'));
+      return ok_(report);
+    }
     if(path==='/users'&&method==='POST'){
       const name=text_(body.name,120),identity=text_(body.identity,10);
       if(!/^\d{10}$/.test(identity)||!['teacher','admin'].includes(body.role)||!/^[a-f0-9]{32}$/.test(body.salt||'')||!/^[a-f0-9]{64}$/.test(body.verifier||'')||!Number.isInteger(body.passwordLength)||body.passwordLength<6||body.passwordLength>256)throw Error('تحقق من الاسم والهوية والصلاحية وكلمة المرور (6 أحرف على الأقل).');

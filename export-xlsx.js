@@ -28,6 +28,18 @@
     sheet.autoFilter={from:'A3',to:'G'+Math.max(3,sheet.rowCount)};
     return workbook;
   }
+  function createReportWorkbook(ExcelJS,{title,headers,rows,widths,note=''}){
+    const workbook=new ExcelJS.Workbook();workbook.creator='مدرسة معاذ بن جبل';workbook.created=new Date();
+    const sheet=workbook.addWorksheet('التقرير',{views:[{rightToLeft:true,state:'frozen',ySplit:3,showGridLines:false}],pageSetup:{paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:0,printTitlesRow:'1:3'}});
+    sheet.columns=headers.map((_,i)=>({width:widths[i]}));
+    sheet.mergeCells(1,1,1,headers.length);sheet.getCell(1,1).value='مدرسة معاذ بن جبل — '+title;
+    sheet.getCell(1,1).font={name:'Arial',size:16,bold:true,color:{argb:'FF15362F'}};sheet.getCell(1,1).alignment={horizontal:'right',vertical:'middle',readingOrder:'rtl'};sheet.getRow(1).height=34;
+    sheet.mergeCells(2,1,2,headers.length);sheet.getCell(2,1).value=note;sheet.getCell(2,1).font={name:'Arial',size:11};sheet.getCell(2,1).alignment={horizontal:'right',vertical:'middle',wrapText:true,readingOrder:'rtl'};sheet.getRow(2).height=38;
+    sheet.getRow(3).values=headers;sheet.getRow(3).height=28;
+    sheet.getRow(3).eachCell(cell=>{cell.font={name:'Arial',size:11,bold:true,color:{argb:'FFFFFFFF'}};cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF15362F'}};cell.alignment={horizontal:'right',vertical:'middle',readingOrder:'rtl'};});
+    for(const values of rows){const row=sheet.addRow(values.map(v=>String(v??'')));row.height=46;row.eachCell(cell=>{cell.font={name:'Arial',size:11};cell.alignment={horizontal:'right',vertical:'middle',wrapText:true,readingOrder:'rtl'};cell.border={bottom:{style:'thin',color:{argb:'FFE1EAE5'}}};if(row.number%2===0)cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF2F7F4'}};});}
+    sheet.autoFilter={from:{row:3,column:1},to:{row:Math.max(3,sheet.rowCount),column:headers.length}};return workbook;
+  }
   let loading;
   function loadLibrary(){
     if(root.ExcelJS)return Promise.resolve(root.ExcelJS);
@@ -40,5 +52,5 @@
       document.head.append(script);
     });return loading;
   }
-  root.SchoolExcel={createWorkbook,certificateName,loadLibrary};
+  root.SchoolExcel={createWorkbook,createReportWorkbook,certificateName,loadLibrary};
 })(globalThis);
